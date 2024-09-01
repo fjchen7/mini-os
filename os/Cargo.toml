@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# RustSBI可执行Machine级别的RISC-V指令。它提供的接口规范称为SBI。
+# sbi-rt封装了SBI服务的接口，供内核调用
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
