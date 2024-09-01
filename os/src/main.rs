@@ -2,6 +2,7 @@
 #![no_main] // 禁用main函数作为入口点
 
 mod lang_items;
+mod sbi;
 
 use core::arch::global_asm;
 // 载入汇编代码
