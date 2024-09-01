@@ -8,3 +8,13 @@
 # - elf: 使用ELF格式的输出文件
 [build]
 target = "riscv64gc-unknown-none-elf"
+
+
+# 为默认目标平台设置编译选项。在编译时，这些参数会传递给rustc。
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    # 使用链接脚本src/linker.ld。该脚本用于定义程序的内存布局等。
+    "-Clink-arg=-Tsrc/linker.ld",
+    # 避免栈帧指针（fp寄存器）被编译器优化，方便调试。
+    "-Cforce-frame-pointers=yes",
+]

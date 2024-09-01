@@ -3,4 +3,8 @@
 
 mod lang_items;
 
+use core::arch::global_asm;
+// 载入汇编代码
+global_asm!(include_str!("entry.asm"));
+
 fn main() {}
