@@ -22,7 +22,8 @@ global_asm!(include_str!("entry.asm"));
 pub fn rust_main() -> ! {
     // 内核初始化
     clear_bss();
-    loop {}
+    println!("Hello, world!");
+    panic!("Shutdown machine!");
 }
 
 // 清零bss段（未初始化的全局变量）
