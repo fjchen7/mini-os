@@ -1,5 +1,9 @@
-#![no_std] // 开启no_std模式
-#![no_main] // 禁用main函数作为入口点
+// 开启no_std模式
+#![no_std]
+// 禁用main函数作为入口点
+#![no_main]
+// 开启panic_info_message特性，见[message](https://doc.rust-lang.org/std/panic/struct.PanicInfo.html#method.message)
+#![feature(panic_info_message)]
 
 mod console;
 mod lang_items;
