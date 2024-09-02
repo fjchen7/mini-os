@@ -2,6 +2,7 @@
 name = "user_lib"
 version = "0.1.0"
 edition = "2021"
-description = "用户程序，用于加载进内核进行测试"
+description = "实现可加载进用户内核的用户程序示例"
 
 [dependencies]
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
