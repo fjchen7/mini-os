@@ -1,10 +1,14 @@
 use core::fmt::{self, Write};
 
+const STDOUT: usize = 1;
+
 struct Stdout;
 
 impl Write for Stdout {
-    fn write_str(&mut self, _s: &str) -> fmt::Result {
-        todo!("使用内核的系统调用打印到STDOUT")
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        use crate::syscall::sys_write;
+        sys_write(STDOUT, s.as_bytes());
+        Ok(())
     }
 }
 
