@@ -2,6 +2,12 @@
 // 内核需要通过SBI，才能获得这些特权指令的执行权限。
 // 这里用到了库sbi_rt提供的SBI接口的封装。
 
+// 打印字符
+pub fn console_putchar(c: usize) {
+    #[allow(deprecated)]
+    sbi_rt::legacy::console_putchar(c);
+}
+
 // 关机
 // failure为false时，表示正常关机
 pub fn shutdown(failure: bool) -> ! {
