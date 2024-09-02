@@ -19,3 +19,26 @@ mod syscall;
 fn main() -> i32 {
     panic!("Cannot find main!");
 }
+
+// 定义user库的入口
+#[no_mangle]
+// 将该函数编译后的汇编代码，放入内存段.text.entry，表示程序的入口点（见文件linker.ld）。
+#[link_section = ".text.entry"]
+pub extern "C" fn _start() -> ! {
+    clear_bss();
+    // 下面要进入的main方法，由应用程序各自实现。链接生成ELF时，会替换此处的默认main实现。
+    let exist_code = main();
+    syscall::sys_exit(exist_code);
+    panic!("unreachable after sys_exit!");
+}
+
+// 清零bss段（为初始化的全局变量）
+fn clear_bss() {
+    extern "C" {
+        fn start_bss();
+        fn end_bss();
+    }
+    (start_bss as usize..end_bss as usize).for_each(|addr| unsafe {
+        (addr as *mut u8).write_volatile(0);
+    });
+}
