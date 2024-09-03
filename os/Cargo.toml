@@ -8,3 +8,4 @@ edition = "2021"
 # sbi-rt封装了SBI服务的接口，供内核调用
 sbi-rt = { version = "0.0.2", features = ["legacy"] }
 log = "0.4.22"
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
