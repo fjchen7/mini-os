@@ -8,13 +8,19 @@
 use core::arch::global_asm;
 use log::*;
 
+#[macro_use]
 mod console;
+pub mod batch;
 mod lang_items;
 mod logging;
 mod sbi;
+mod sync;
+pub mod syscall;
+pub mod trap;
 
 // 载入汇编代码
 global_asm!(include_str!("entry.asm"));
+global_asm!(include_str!("link_app.S"));
 
 // 不同的编译器，在编译时，会修改函数/变量的符号名，以做到解决命名冲突或增加类型安全等。
 // 这叫做name mangling，不同的编译器有自身的策略。
@@ -27,7 +33,10 @@ pub fn rust_main() -> ! {
     clear_bss();
     log_memory();
     println!("Hello, world!");
-    panic!("Shutdown machine!");
+    trap::init();
+    batch::init();
+    // 当前处于内核态。调用run_next_app，才能进入用户态，从而执行程序。
+    batch::run_next_app();
 }
 
 // 清零bss段（未初始化的全局变量）
@@ -38,9 +47,7 @@ fn clear_bss() {
         fn ebss(); // .bss段的结束地址
     }
     // 将.bss段清零
-    (sbss as usize..ebss as usize).for_each(|a| unsafe {
-        (a as *mut u8).write_volatile(0)
-    })
+    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) })
 }
 
 fn log_memory() {
