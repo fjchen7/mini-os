@@ -31,3 +31,10 @@ macro_rules! println {
         $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?));
     }
 }
+
+#[macro_export]
+macro_rules! println_kernel {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::console::print(format_args!(concat!("\u{1B}[93m[kernel]\u{1B}[0m ", $fmt, "\n") $(, $($arg)+)?));
+    }
+}
