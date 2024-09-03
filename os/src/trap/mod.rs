@@ -1,6 +1,6 @@
 mod context;
 
-use crate::syscall::syscall;
+use crate::{batch::run_next_app, syscall::syscall};
 use core::arch::global_asm;
 use riscv::register::{
     mtvec::TrapMode,
@@ -42,12 +42,12 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         // 访存异常
         Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
             println_kernel!("PageFault in application, kernel killed it.");
-            todo!("run next app");
+            run_next_app();
         }
         // 非法指令
         Trap::Exception(Exception::IllegalInstruction) => {
             println_kernel!("IllegalInstruction in application, kernel killed it.");
-            todo!("run next app");
+            run_next_app();
         }
         // 暂时不支持的Trap类型
         _ => {
