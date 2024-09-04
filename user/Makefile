@@ -8,13 +8,18 @@ ELFS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%, $(APPS))
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-elf:
-	@cargo build --release
+elf: $(APPS)
+	@python3 build.py
 
 binary: elf
 	@$(foreach elf, $(ELFS), $(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf));)
 
 build: binary
+
+clean:
+	@cargo clean
+
+.PHONY: elf binary build clean
 
 # 命令说明
 # 假设src/bin有app1.rs和app2.rs两个文件，则
