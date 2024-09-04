@@ -18,21 +18,22 @@
 # 该函数的功能：内核如何处理Trap。
 # 当前的寄存器代表程序的上下文，需要保存到栈（内核栈）上。
 __alltraps:
-    # 在内核初始化后，sscratch会指向内核栈栈顶。
+    # 进入该方法时，sscratch指向该程序专属的内核栈栈顶。对于程序i，该值就是KERNEL_STACK[i]的地址。
+    # sscratch的值是由__restore方法设置的。
 
     # 指令csrrw rd, csr, rc的功能：
     #   - 将csr的值写入通用寄存器rd
     #   - 将通用寄存器rd的值写入csr
-    # CSR全称Control and Status Register，是控制和描述某些特权级行为的寄存器。这里就是描述Trap状态。
+    # CSR全称Control and Status Register，是控制和描述某些特权级行为的寄存器。这里用于描述Trap状态。
     # 下面的指令，相当于交换sp和sscratch中的值
     # 该指令之前，sscratch指向内核栈，sp指向用户栈
     # 该指令之后，sscratch指向用户栈，sp指向内核栈
     csrrw sp, sscratch, sp
 
-    # 保存Trap上下文到内核栈上
+    # 保存Trap上下文到该栈上
     # 要保存的内容：通用寄存器x0~x31，sstatus和sepc
     # 需要分配34*8字节的栈帧给内核栈，这正是Rust定义的TrapContext的大小
-    # 栈从高位往低位增长，所以这里是减34*8
+    # 栈从高位往低位增长，现在sp的值为KERNEL_STACK[i] - size_of(TrapContext)
     addi sp, sp, -34*8
 
     # 保存x0~x31。实际上不保存这几个：
@@ -66,6 +67,7 @@ __alltraps:
     # 寄存器a0~17（x10~x17）用于传递函数参数。
     mv a0, sp
     # 调用trap_handler函数（Rust中定义）
+    # 此时的sp指向该程序专属的内核栈栈顶，系统调用的逻辑，可以用改栈保存局部变量等。
     call trap_handler
 
 # 该函数的功能：恢复程序上下文，并返回到用户态。
@@ -74,10 +76,9 @@ __alltraps:
 # 1）内核处理完Trap后。
 # 2）内核刚开始运行时。此时调用该函数，才能进入用户态，执行第一个程序。
 __restore:
-    # trap_handler函数返回后，将TrapContext的地址作为返回值
-    # 函数的返回值会保存到寄存器a0中
-    # 因此这里相当于，将内核栈的地址赋值给sp
-    mv sp, a0
+    # 在内核栈中，程序i有专属的内核栈，地址为KERNEL_STACK[i]，长度KERNEL_STACK_SIZE
+    # 此时栈指针sp的值为KERNEL_STACK[i] - size_of(TrapContext)
+    # 此处保存了当前程序i的TrapContext
 
     # 从内核栈中恢复sstatus、sepc和sscratch
     ld t0, 32*8(sp)
@@ -104,12 +105,11 @@ __restore:
     addi sp, sp, 34*8
 
     # 交换sp和sscratch的值
-    # 该指令之后，sscratch指向内核栈，sp指向用户栈
+    # 该指令之后，sscratch指向内核栈中该程序TrapContext的位置，sp指向用户栈
     csrrw sp, sscratch, sp
 
     # 执行Supervisor级特权指令sret，将控制流还给程序
     # sret指令会做：
     #   - 将CSR寄存器spec中的值写入pc寄存器。程序会跳转到pc指向地址的指令上执行。
     #   - 根据sstatus寄存器的值，切换到特权级。0/1分别切换到User/Supervisor。
-    # 在调用__store的方法run_next_app中，spec的值被设置为APP_BASE_ADDRESS，也就是程序的起始地址0x80400000。
     sret
