@@ -10,8 +10,9 @@ use log::*;
 
 #[macro_use]
 mod console;
-pub mod batch;
+mod config;
 mod lang_items;
+mod loader;
 mod logging;
 mod sbi;
 mod sync;
