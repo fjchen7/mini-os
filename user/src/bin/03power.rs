@@ -21,10 +21,10 @@ fn main() -> i32 {
         index = (index + 1) % SIZE;
         pow[index] = last * P % MOD;
         if i % 10000 == 0 {
-            println!("02Power: {}^{}={}(MOD {})", P, i, pow[index], MOD);
+            println!("03Power: {}^{}={}(MOD {})", P, i, pow[index], MOD);
         }
         sys_yield();
     }
-    println!("Test power02 OK!");
+    println!("Test power03 OK!");
     0
 }

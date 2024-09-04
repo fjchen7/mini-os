@@ -5,7 +5,7 @@
 #[macro_use]
 pub mod console;
 mod lang_items;
-mod syscall;
+pub mod syscall;
 
 #[no_mangle]
 // 链接时用的符号，分为强链接和弱链接：

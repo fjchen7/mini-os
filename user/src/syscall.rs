@@ -1,6 +1,7 @@
 // 系统调用号
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
+const SYSCALL_YIELD: usize = 124;
 
 // 调用系统调用：写文件到缓冲区
 // - fd：待写入文件的文件描述符；
@@ -16,6 +17,11 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
 // - exit_code：程序的退出码。
 pub fn sys_exit(exit_code: i32) -> isize {
     syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0])
+}
+
+// 调用系统调用：程序主动让出CPU，调度到其他程序
+pub fn sys_yield() -> isize {
+    syscall(SYSCALL_YIELD, [0, 0, 0])
 }
 
 // 封装系统调用的调用
