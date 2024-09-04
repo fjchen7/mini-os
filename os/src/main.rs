@@ -7,6 +7,7 @@
 
 use core::arch::global_asm;
 use log::*;
+use task::TASK_MANAGER;
 
 #[macro_use]
 mod console;
@@ -17,6 +18,7 @@ mod logging;
 mod sbi;
 mod sync;
 pub mod syscall;
+pub mod task;
 pub mod trap;
 
 // 载入汇编代码
@@ -35,9 +37,8 @@ pub fn rust_main() -> ! {
     log_memory();
     println!("Hello, world!");
     trap::init();
-    batch::init();
-    // 当前处于内核态。调用run_next_app，才能进入用户态，从而执行程序。
-    batch::run_next_app();
+    loader::load_apps();
+    TASK_MANAGER.run_first_task();
 }
 
 // 清零bss段（未初始化的全局变量）
