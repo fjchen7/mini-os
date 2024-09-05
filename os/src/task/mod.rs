@@ -7,12 +7,14 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use core::ops::AddAssign;
+
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_us;
 use lazy_static::*;
-use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
@@ -23,6 +25,8 @@ pub struct TaskManager {
     num_app: usize,
     // 为了让TaskManager能作为全局静态变量，且同时能被修改，我们又得使用UPSafeCell来获得内部可变性
     inner: UPSafeCell<TaskManagerInner>,
+    // 统计切换时间
+    switch_time: UPSafeCell<usize>,
 }
 
 // 真正的任务管理器...
@@ -59,11 +63,23 @@ lazy_static! {
                     current_task: 0,
                 })
             },
+            switch_time: unsafe { UPSafeCell::new(0) },
         }
     };
 }
 
 impl TaskManager {
+    unsafe fn switch(
+        &self,
+        current_task_cx_ptr: *mut TaskContext,
+        next_task_cx_ptr: *const TaskContext,
+    ) {
+        let star_time = get_time_us();
+        switch::__switch(current_task_cx_ptr, next_task_cx_ptr);
+        let duration = get_time_us() - star_time;
+        self.switch_time.exclusive_access().add_assign(duration)
+    }
+
     // 运行第一个任务
     pub fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
@@ -75,7 +91,7 @@ impl TaskManager {
         // 将第一个任务的上下文加载到当前环境（寄存器）中，并开始执行。
         // 由于前面没有任务运行，所以这里直接丢掉当前保存的上下文（这里的unused）
         unsafe {
-            __switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
+            self.switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
         }
         // __switch修改了pc寄存器，不会执行到这里
         panic!("unreachable in run_first_task!");
@@ -118,11 +134,15 @@ impl TaskManager {
             // 将当前任务的上下文保存到current_task_cx_ptr中
             // 然后加载next_task_cx_ptr的上下文到寄存器，并开始运行next_task
             unsafe {
-                __switch(current_task_cx_ptr, next_task_cx_ptr);
+                self.switch(current_task_cx_ptr, next_task_cx_ptr);
             }
             // 此处会回到用户态
         } else {
             println!("All applications completed!");
+            println!(
+                "task switch time: {} us",
+                self.switch_time.exclusive_access()
+            );
             shutdown(false);
         }
     }
