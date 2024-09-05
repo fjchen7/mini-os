@@ -19,6 +19,7 @@ mod sbi;
 mod sync;
 pub mod syscall;
 pub mod task;
+mod timer;
 pub mod trap;
 
 // 载入汇编代码
@@ -38,6 +39,8 @@ pub fn rust_main() -> ! {
     println!("Hello, world!");
     trap::init();
     loader::load_apps();
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger(); // 设置第一个时钟中断
     TASK_MANAGER.run_first_task();
 }
 

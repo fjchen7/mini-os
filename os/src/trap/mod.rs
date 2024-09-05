@@ -1,11 +1,9 @@
 mod context;
 
-use crate::{syscall::syscall, task::TASK_MANAGER};
+use crate::{syscall::syscall, task::TASK_MANAGER, timer::set_next_trigger};
 use core::arch::global_asm;
 use riscv::register::{
-    mtvec::TrapMode,
-    scause::{self, Exception, Trap},
-    stval, stvec,
+    mtvec::TrapMode, scause::{self, Exception, Interrupt, Trap}, sie, stval, stvec
 };
 
 global_asm!(include_str!("trap.S"));
@@ -19,6 +17,14 @@ pub fn init() {
         // CSR寄存器stvec存放中断处理代码的地址，即我们在trap.S中定义的__alltraps的地址。
         // 它有两个模式Direct和Vectored，我们选择Direct模式。
         stvec::write(__alltraps as usize, TrapMode::Direct);
+    }
+}
+
+// 初始化时钟中断
+pub fn enable_timer_interrupt() {
+    unsafe {
+        // 设置sie.stie为1，使得时钟中断不会被屏蔽
+        sie::set_stimer();
     }
 }
 
@@ -38,6 +44,11 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             // 执行系统调用，并将结果写回x10。
             // x10，x11，x12，x17，又名a0，a1，a2，a7
             cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+        }
+        // 时钟中断
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_trigger();
+            TASK_MANAGER.suspend_current_and_run_next();
         }
         // 访存异常
         Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {

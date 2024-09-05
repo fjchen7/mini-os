@@ -1,4 +1,4 @@
-use crate::task::TASK_MANAGER;
+use crate::{task::TASK_MANAGER, timer::get_time_ms};
 
 // 退出程序
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -11,4 +11,9 @@ pub fn sys_exit(exit_code: i32) -> ! {
 pub fn sys_yield() -> isize {
     TASK_MANAGER.suspend_current_and_run_next();
     0
+}
+
+// 返回CPU时间（毫秒）
+pub fn sys_get_time() -> isize {
+    get_time_ms() as isize
 }
