@@ -19,3 +19,10 @@ pub fn shutdown(failure: bool) -> ! {
     }
     unreachable!()
 }
+
+// 设置下一个时钟中断
+pub fn set_timer(timer: usize) {
+    // 设置了mtimecmp寄存器的值。
+    // 一旦计数器寄存器mtime超过mtimecmp的值，就会触发时钟中断。
+    sbi_rt::set_timer(timer as _);
+}
