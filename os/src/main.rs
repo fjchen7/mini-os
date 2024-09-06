@@ -4,6 +4,8 @@
 #![no_main]
 // 开启panic_info_message特性，见[message](https://doc.rust-lang.org/std/panic/struct.PanicInfo.html#method.message)
 #![feature(panic_info_message)]
+// 开启alloc_error_handler特性
+#![feature(alloc_error_handler)]
 
 use core::arch::global_asm;
 use log::*;
@@ -15,12 +17,16 @@ mod config;
 mod lang_items;
 mod loader;
 mod logging;
+mod mm;
 mod sbi;
 mod sync;
 pub mod syscall;
 pub mod task;
 mod timer;
 pub mod trap;
+
+// 引入Rust内置的alloc库，用于动态内存分配
+extern crate alloc;
 
 // 载入汇编代码
 global_asm!(include_str!("entry.asm"));
