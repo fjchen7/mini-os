@@ -27,6 +27,8 @@ pub mod trap;
 
 // 引入Rust内置的alloc库，用于动态内存分配
 extern crate alloc;
+#[macro_use]
+extern crate bitflags;
 
 // 载入汇编代码
 global_asm!(include_str!("entry.asm"));
