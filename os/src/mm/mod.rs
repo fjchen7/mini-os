@@ -4,5 +4,6 @@
 //! 每个任务或进程都有一个内存集合，用于管理其虚拟内存。
 
 mod address;
+mod frame_allocator;
 mod heap_allocator;
 mod page_table;
