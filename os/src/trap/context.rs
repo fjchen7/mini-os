@@ -28,8 +28,14 @@ impl TrapContext {
         self.x[2] = sp;
     }
 
-    // 初始化应用程序的TrapContext
-    pub fn app_init_context(entry: usize, sp: usize) -> Self {
+    // 初始化程序的TrapContext
+    pub fn app_init_context(
+        entry: usize,
+        sp: usize,
+        kernel_satp: usize,
+        kernel_sp: usize,
+        trap_handler: usize,
+    ) -> Self {
         // 设置CSR寄存器sstatus，记录Trap发生之前，CPU处于哪个特权级（S/U）
         // 由于是应用程序，所以肯定处于U模式
         let mut sstatus = sstatus::read();
@@ -37,12 +43,12 @@ impl TrapContext {
         let mut cx = Self {
             x: [0; 32],
             sstatus,
-            sepc: entry, // 应用程序的入口地址（在.text段上）
-            kernel_satp: todo!(),
-            kernel_sp: todo!(),
-            trap_handler: todo!(),
+            sepc: entry,  // 程序的入口地址（在.text段上）
+            kernel_satp,  // 内核地址空间对应的satp寄存器的值
+            kernel_sp,    // 内核地址空间中，属于该程序的内核栈的栈顶指针
+            trap_handler, // trap_handler方法的地址
         };
-        // 设置用户程序的栈顶指针
+        // 设置程序的用户栈的栈顶指针
         cx.set_sp(sp);
         cx
     }

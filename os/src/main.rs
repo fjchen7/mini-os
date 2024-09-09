@@ -46,7 +46,7 @@ pub fn rust_main() -> ! {
     log_memory();
     println!("Hello, world!");
     trap::init();
-    loader::load_apps();
+    // loader::load_apps();
     trap::enable_timer_interrupt();
     timer::set_next_trigger(); // 设置第一个时钟中断
     TASK_MANAGER.run_first_task();

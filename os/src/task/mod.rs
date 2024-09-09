@@ -9,11 +9,12 @@ mod task;
 
 use core::ops::AddAssign;
 
-use crate::config::MAX_APP_NUM;
-use crate::loader::{get_num_app, init_app_cx};
+use crate::loader::{get_app_data, get_num_app};
 use crate::sbi::shutdown;
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_us;
+use crate::trap::TrapContext;
+use alloc::vec::Vec;
 use lazy_static::*;
 use task::{TaskControlBlock, TaskStatus};
 
@@ -32,28 +33,21 @@ pub struct TaskManager {
 // 真正的任务管理器...
 pub struct TaskManagerInner {
     // 任务列表
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     // 当前正在运行的任务的id
     current_task: usize,
 }
 
 lazy_static! {
-    // 用于管理内核任务的全局变量
+    // 用于管理任务的全局变量
     pub static ref TASK_MANAGER: TaskManager = {
-        // 任务总数
+        println!("init TASK_MANAGER");
         let num_app = get_num_app();
-        let mut tasks = [TaskControlBlock {
-            task_cx: TaskContext::zero_init(),
-            // 任务刚开始都是未初始化状态
-            task_status: TaskStatus::UnInit,
-        }; MAX_APP_NUM];
-        for (i, task) in tasks.iter_mut().enumerate() {
-            // 初始化任务：
-            //   - 将栈指针（sp）：设为该任务在内核栈中的TrapContext地址
-            //   - 将返回地址（ra）：设为__restore方法
-            task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-            // 任务已经初始化，状态设置为Ready
-            task.task_status = TaskStatus::Ready;
+        println!("num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        for i in 0..num_app {
+            let elf = get_app_data(i);
+            tasks.push(TaskControlBlock::new(elf, i));
         }
         TaskManager {
             num_app,
@@ -158,5 +152,19 @@ impl TaskManager {
     pub fn exit_current_and_run_next(&self) {
         self.mark_current_exited();
         self.run_next_task();
+    }
+
+    // 返回当前任务的地址空间所对应的satp寄存器的值
+    pub fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
+    }
+
+    // 返回当前任务的TrapContext
+    pub fn get_current_trap_cx(&self) -> &mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_trap_cx()
     }
 }
