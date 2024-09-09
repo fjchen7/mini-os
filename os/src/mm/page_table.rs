@@ -1,8 +1,13 @@
 //! 页表的数据结构表示，以及多级页表的实现。
 
+use alloc::vec;
+use alloc::vec::Vec;
 use bitflags::*;
 
-use super::address::PhysPageNum;
+use super::{
+    address::{PhysPageNum, StepByOne as _, VirtAddr, VirtPageNum},
+    frame_allocator::{frame_alloc, FrameTracker},
+};
 
 // bitflags!能生成表示标志位的结构体
 bitflags! {
@@ -65,5 +70,100 @@ impl PageTableEntry {
 
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
+    }
+}
+
+// 多级页表。每个应用程序都有自己的页表。
+pub struct PageTable {
+    // 根页表的物理页号
+    root_ppn: PhysPageNum,
+    // 保存页表所在的物理页帧
+    frames: Vec<FrameTracker>,
+}
+
+// 为了简化实现，这里假设创建和映射页表时不会发生内存分配失败。
+impl PageTable {
+    pub fn new() -> Self {
+        // 分配一个物理页，作为根页表
+        let frame = frame_alloc().unwrap();
+        PageTable {
+            root_ppn: frame.ppn,
+            frames: vec![frame],
+        }
+    }
+
+    // 模拟MMU从satp寄存器中创建页表
+    // 这里的变量表示CSR寄存器satp的值，其最低位的44位表示根页表的物理页号
+    pub fn from_token(satp: usize) -> Self {
+        Self {
+            root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
+            frames: Vec::new(),
+        }
+    }
+
+    // 找到虚拟页号对应的页表项，返回其拷贝。
+    pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        self.find_pte(vpn).map(|pte| *pte)
+    }
+
+    // 找到虚拟页号对应的页表项，如果不存在则创建。
+    // 但返回的页表项不一定合法，需要调用者进一步判断。
+    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&'static mut PageTableEntry> {
+        let idxs = vpn.indexes();
+        let mut ppn = self.root_ppn;
+        let mut result: Option<&mut PageTableEntry> = None;
+        for (i, idx) in idxs.iter().enumerate() {
+            // 找到页表中对应的页表项
+            let pte = &mut ppn.get_pte_array()[*idx];
+            if i == 2 {
+                result = Some(pte);
+                break;
+            }
+            if !pte.is_valid() {
+                let frame = frame_alloc().unwrap();
+                *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
+                self.frames.push(frame);
+            }
+            ppn = pte.ppn();
+        }
+        result
+    }
+
+    // 找到虚拟页号对应的页表项。如果不存在，则返回None。
+    fn find_pte(&self, vpn: VirtPageNum) -> Option<&'static mut PageTableEntry> {
+        let idxs = vpn.indexes();
+        let mut ppn = self.root_ppn;
+        let mut result: Option<&mut PageTableEntry> = None;
+        for (i, idx) in idxs.iter().enumerate() {
+            let pte = &mut ppn.get_pte_array()[*idx];
+            if i == 2 {
+                result = Some(pte);
+                break;
+            }
+            if !pte.is_valid() {
+                return None;
+            }
+            ppn = pte.ppn();
+        }
+        result
+    }
+
+    #[allow(unused)]
+    // 将虚拟页号映射到物理页号
+    // 这里采用恒等映射，即虚拟页号等于物理页号
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+        let pte = self.find_pte_create(vpn).unwrap();
+        // 如果找到的页表项是合法的，则表示之前已经映射过了，报错。
+        assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+    }
+
+    #[allow(unused)]
+    // 取消虚拟页号的映射
+    pub fn unmap(&mut self, vpn: VirtPageNum) {
+        let pte = self.find_pte(vpn).unwrap();
+        // 如果找到的页表项是非法的，则表示之前没有映射过，报错。
+        assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
+        *pte = PageTableEntry::empty();
     }
 }

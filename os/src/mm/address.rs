@@ -164,6 +164,22 @@ impl From<PhysPageNum> for PhysAddr {
     }
 }
 
+impl VirtPageNum {
+    // 取出虚拟页号在页表中的索引
+    // 虚拟页号共27位，按字节低位到高位，为：一级（根）索引（9位） | 二级索引（9位） | 三级索引（9位）
+    // 该索引表示，该虚拟页号在三级页表中的位置
+    pub fn indexes(&self) -> [usize; 3] {
+        let mut vpn = self.0;
+        let mut idx = [0usize; 3];
+        for i in (0..3).rev() {
+            // 取出低9位。最先取出的是一级（（根页表）索引
+            idx[i] = vpn & 0b1_1111_1111;
+            vpn >>= 9;
+        }
+        idx
+    }
+}
+
 impl PhysPageNum {
     // 将该物理页存的4KB数据，转换成页表项数组，共4KB/8B=512个
     // 只有页表才会用到这个函数
