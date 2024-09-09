@@ -14,7 +14,7 @@ use address::{StepByOne, VPNRange};
 pub use frame_allocator::{frame_alloc, FrameTracker};
 pub use memory_set::remap_test;
 pub use memory_set::{MapPermission, MemorySet, KERNEL_SPACE};
-pub use page_table::PageTableEntry;
+pub use page_table::{translated_byte_buffer, PageTableEntry};
 
 // 初始化内存管理模块
 pub fn init() {

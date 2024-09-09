@@ -103,9 +103,11 @@ impl From<VirtPageNum> for usize {
 }
 
 impl VirtAddr {
+    // 返回虚拟页号，向下取值
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
+    // 返回虚拟页号，向上取值
     pub fn ceil(&self) -> VirtPageNum {
         if self.0 == 0 {
             VirtPageNum(0)
