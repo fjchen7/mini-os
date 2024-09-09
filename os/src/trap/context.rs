@@ -1,7 +1,9 @@
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
 #[repr(C)]
-// 表示处理Trap时，要保存的上下文信息
+// Trap上下文
+// 进入/退出Trap时，要恢复的寄存器只有：通用寄存器x[32]、sstatus、sepc
+// 剩余的kernel_satp、kernel_sp、trap_handler，在切换地址空间时使用
 pub struct TrapContext {
     // 通用寄存器
     pub x: [usize; 32],
@@ -11,6 +13,13 @@ pub struct TrapContext {
     // Trap处理完，执行sret回到User模式后，spec的值会被复制到pc寄存器，CPU从这里继续执行
     // 如果是系统调用，那sepc就指向ecall指令（从U切换S模式）的地址
     pub sepc: usize,
+
+    // 记录内核地址空间所对应的satp寄存器的值。satp寄存器设置分页模式和根页表的物理地址。
+    pub kernel_satp: usize,
+    // 在内核地址空间中，属于该程序的内核栈的栈顶地址。
+    pub kernel_sp: usize,
+    // 处理Trapt的方法trap_handler的地址
+    pub trap_handler: usize,
 }
 
 impl TrapContext {
@@ -29,6 +38,9 @@ impl TrapContext {
             x: [0; 32],
             sstatus,
             sepc: entry, // 应用程序的入口地址（在.text段上）
+            kernel_satp: todo!(),
+            kernel_sp: todo!(),
+            trap_handler: todo!(),
         };
         // 设置用户程序的栈顶指针
         cx.set_sp(sp);

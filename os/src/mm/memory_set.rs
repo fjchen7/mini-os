@@ -1,16 +1,25 @@
 //! 虚拟地址空间的数据结构表示。每个程序都有自己的地址空间。
 
 use super::{
-    address::{PhysPageNum, VPNRange, VirtAddr, VirtPageNum},
+    address::{PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum},
     frame_allocator::{frame_alloc, FrameTracker},
     page_table::{PTEFlags, PageTable, PageTableEntry},
 };
 use crate::{
     config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
     mm::address::StepByOne,
+    sync::UPSafeCell,
 };
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use core::cmp::min;
+use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
+use core::{arch::asm, cmp::min};
+use lazy_static::*;
+use riscv::register::satp;
+
+lazy_static! {
+    // 用于管理内核地址空间的MemorySet实例
+    pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
+        Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+}
 
 // 表示内核或应用程序的地址空间。
 // 它包含的物理页有：
@@ -90,10 +99,18 @@ impl MemorySet {
         );
     }
 
-    /// Mention that trampoline is not collected by areas.
-    // 映射跳板 (Trampoline）
+    // 映射跳板 (Trampoline）。跳板是存放切换地址空间的汇编代码的物理内存区域。
+    // 不管是内核或程序，跳板的映射都是一致的。也就是，跳板的虚拟页都相同，且会映射到相同的物理页。
     fn map_trampoline(&mut self) {
-        todo!()
+        extern "C" {
+            fn strampoline();
+        }
+        self.page_table.map(
+            VirtAddr::from(TRAMPOLINE).into(),
+            PhysAddr::from(strampoline as usize).into(),
+            PTEFlags::R | PTEFlags::X,
+        );
+        // 但跳表的物理页，不会被逻辑段管理。它是特殊的物理页，不会被回收。映射关系是人为固定的。
     }
 
     // 新建内核的地址空间。这里将映射内核的地址空间中的低256GB内存。
@@ -192,13 +209,13 @@ impl MemorySet {
     // - 保护页（guard page）：大小为一个页
     // - 用户栈：大小为USER_STACK_SIZE
     // 高256GB（从高位到低位）
-    // - 保护页（guard page）：大小为一个页
+    // - 跳板（Trampoline）：存放切换地址空间的汇编代码，大小为一个页
     // - Trap Context
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
         // 映射跳板
         memory_set.map_trampoline();
-        // 使用库xmas_elf来解析ELF文件
+        // 使用库xmas_elf来解析ELF数据
         // 可以用rust-readobj -all target/debug/os命令，来查看ELF文件的结构
         let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
         let elf_header = elf.header;
@@ -253,8 +270,8 @@ impl MemorySet {
             ),
             None,
         );
-        // 初始化区域，用来存放TrapContext，用于保存用户态的寄存器状态
-        // 这里位于空间地址的高256GB位，而前面的都位于低256GB位。这两个区域是断开的。
+        // 映射存放TrapContext的区域，这在地址空间的次高页（在地址空间的高256位中）。
+        // 地址空间的最高页是跳板（Trampoline），但它的映射关系是独立的，不归该地址空间结构体管理。
         memory_set.push(
             MapArea::new(
                 TRAP_CONTEXT.into(),
@@ -273,6 +290,27 @@ impl MemorySet {
 
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
+    }
+
+    // 设置CSR寄存器satp的值，激活该地址空间（只有内核空间才调用）
+    pub fn activate(&self) {
+        let satp = self.page_table.token();
+        unsafe {
+            // 写satp的指令不是跳转指令，PC只会简单地自增取指的地址。
+            // 该指令前后，地址空间已经不同了，MMU会以不同的方式翻译地址。
+            // 不过这对内核空间用该方法来开启分页，没有影响：
+            // - 该指令前，分页机制尚未开启，直接用物理地址访问指令
+            // - 该指令后，开启分页机制。但当前属于内核空间，映射为恒等映射，访问的虚拟内存等同于物理内存
+            // 因此前后是连续的
+            satp::write(satp);
+            // sfence.vma指令是内存屏障，可清空快表（TLB, Translation Lookaside Buffer）
+            // 由于地址空间已经变化，因此要清除这些过期的映射关系的缓存，保证MMU不再看到。
+            asm!("sfence.vma");
+        }
+    }
+
+    pub fn token(&self) -> usize {
+        self.page_table.token()
     }
 }
 
@@ -381,4 +419,37 @@ impl MapArea {
             current_vpn.step();
         }
     }
+}
+
+#[allow(unused)]
+// 测试内核空间的多级页表是否正确设置
+pub fn remap_test() {
+    extern "C" {
+        fn stext();
+        fn etext();
+        fn srodata();
+        fn erodata();
+        fn sdata();
+        fn edata();
+    }
+    let mut kernel_space = KERNEL_SPACE.exclusive_access();
+    let mid_text: VirtAddr = ((stext as usize + etext as usize) / 2).into();
+    let mid_rodata: VirtAddr = ((srodata as usize + erodata as usize) / 2).into();
+    let mid_data: VirtAddr = ((sdata as usize + edata as usize) / 2).into();
+    assert!(!kernel_space
+        .page_table
+        .translate(mid_text.floor())
+        .unwrap()
+        .writable(),);
+    assert!(!kernel_space
+        .page_table
+        .translate(mid_rodata.floor())
+        .unwrap()
+        .writable(),);
+    assert!(!kernel_space
+        .page_table
+        .translate(mid_data.floor())
+        .unwrap()
+        .executable(),);
+    println!("remap_test passed!");
 }

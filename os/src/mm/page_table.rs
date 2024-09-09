@@ -166,4 +166,13 @@ impl PageTable {
         assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
         *pte = PageTableEntry::empty();
     }
+
+    // 构造CSR寄存器satp的值，使得分页模式为SV39。satp用于控制MMU的行为。
+    // CSR寄存器satp的格式：MODE (4 bits) | ASID (16 bits) | PPN (44 bits)
+    // - MODE：0不开启分页机制，8开启SV39分页机制
+    // - ASCI：地址空间的标识符
+    // - PPN：根页表的物理页号
+    pub fn token(&self) -> usize {
+        8usize << 60 | self.root_ppn.0
+    }
 }
