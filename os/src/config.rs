@@ -12,6 +12,12 @@ pub const MAX_APP_NUM: usize = 10;
 pub const APP_BASE_ADDRESS: usize = 0x80400000;
 pub const APP_SIZE_LIMIT: usize = 0x20000;
 
+// 空间地址的高256GB存放（按高位到低位）：
+// - 跳板（Trampoline）：为不可执行的空数据
+// - 陷阱上下文（Trap Context）：用于保存中断/异常的上下文
+pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
+
 // 物理内存的结束地址
 // 在linker.ld中，我们将将内核数据的结束地址（ekernel）定为0x80_000_000
 // 因此我们的物理内存大小为8MB
