@@ -8,27 +8,35 @@
     .section .text
     .globl __switch
 
-# 该函数的功能：切换任务。
-# 1. 保存当前寄存器到current_task_cx_ptr（当前正在运行的任务就是current_task）
-# 2. 将next_task_cx_ptr中存放的上下文恢复到寄存器中
-# 3. 执行ret指令，跳转到ra寄存器中的地址执行指令
-# 函数签名：
-# __switch(
-#     // 当前任务A的用户栈，用来保存上下文
-#     current_task_cx_ptr: *mut TaskContext,
-#     // 即将切换过去的任务B的用户栈
-#     next_task_cx_ptr: *const TaskContext
-# )
+# 程序A触发中断，陷入内核态，执行中断逻辑，会返回到用户态。
+# 处于该过程的内核态时，会记录上下文：最后要返回的地址（ra）、当前任务的内核栈的栈顶指针（sp）。
+#
+# 这个函数想做：在内核态处理完程序A的中断后，不回到程序A，而是进入程序B的执行流。
+#
+# 前面提到的ra/sp，决定了中断结束后返回哪里（ra），以及切换回去必要的信息（sp）。
+# 因此，只要简单地将ra/sp等寄存器替换为程序B的，并在某处保存程序A的，就可以实现任务切换。
+#
+# 该函数的流程：
+# 1）保存当前任务A的上下文（当前寄存器ra/sp的值）到current_task_cx_ptr
+# 2）将任务B的上下文（next_task_cx_ptr）恢复到寄存器中
+# 3）执行ret指令，跳转到ra寄存器中的地址，执行指令。
+#
+# 结构TaskContext，记录了任务陷入内核态里要保存的ra/sp。
 # TaskContext:
 #     ra: usize,       // 本任务完成后的返回地址
 #     sp: usize,       // 本任务的内核栈的栈顶指针
 #     s: [usize; 12],  // 寄存器s0~s11
+# 函数签名：
+# __switch(
+#     current_task_cx_ptr: *mut TaskContext,
+#     next_task_cx_ptr: *const TaskContext
+# )
 __switch:
-    # a0表示current_task_cx_ptr
-    # a1表示next_task_cx_ptr
+    # a0：current_task_cx_ptr
+    # a1：next_task_cx_ptr
     # 当前正在运行的是任务A，此时的寄存器是它的上下文
 
-    # 保存任务A的上下文到它的用户栈current_task_cx_ptr
+    # 保存任务A的上下文到current_task_cx_ptr
     # 1）保存ra到current_task_cx_ptr->ra
     # 寄存器ra是当前任务完成后的返回地址
     sd ra, 0(a0)
@@ -52,5 +60,5 @@ __switch:
     .endr
 
     # ret指令用于从函数中返回，将控制权交还给调用者
-    # 它会将ra寄存器中的值，写入pc寄存器。程序将跳转到pc指向地址的指令上执行，从而做到返回的效果
+    # 它会读出ra寄存器的值，写入pc寄存器。程序将跳转到pc所指地址的指令上执行，从而做到返回的效果
     ret

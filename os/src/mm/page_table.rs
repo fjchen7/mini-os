@@ -14,14 +14,14 @@ use super::{
 bitflags! {
     // 页表项的标志位
     pub struct PTEFlags: u8 {
-        const V = 1 << 0;  // 页表是否合法
-        const R = 1 << 1;  // 可读
-        const W = 1 << 2;  // 可写
-        const X = 1 << 3;  // 可执行
-        const U = 1 << 4;  // 用户态（CPU处于U特权级时）可访问
+        const V = 1 << 0;  // Valid：页表是否合法
+        const R = 1 << 1;  // Read：可读
+        const W = 1 << 2;  // Write：可写
+        const X = 1 << 3;  // eXecute：可执行
+        const U = 1 << 4;  // User：用户态（CPU处于U特权级时）可访问
         const G = 1 << 5;
-        const A = 1 << 6;  // 已被访问
-        const D = 1 << 7;  // 已被修改
+        const A = 1 << 6;  // Access：已被访问。CPU在访问页表项时，会将此位1。但CPU不会清除此位，这由操作系统负责。
+        const D = 1 << 7;  // Dirty：已被修改。CPU在写入页表项时，会将此位1。但CPU不会清除此位，这由操作系统负责。
     }
 }
 
@@ -149,7 +149,6 @@ impl PageTable {
         result
     }
 
-    #[allow(unused)]
     // 将虚拟页号映射到物理页号
     // 这里采用恒等映射，即虚拟页号等于物理页号
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
@@ -159,7 +158,6 @@ impl PageTable {
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 
-    #[allow(unused)]
     // 取消虚拟页号的映射
     pub fn unmap(&mut self, vpn: VirtPageNum) {
         let pte = self.find_pte(vpn).unwrap();

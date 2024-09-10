@@ -1,4 +1,4 @@
-//! 虚拟地址空间的数据结构表示。每个程序都有自己的地址空间。
+//! 虚拟地址空间的抽象表示。每个程序都有自己的地址空间。
 
 use super::{
     address::{PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum},
@@ -28,7 +28,7 @@ lazy_static! {
 pub struct MemorySet {
     page_table: PageTable,
     // 逻辑段，如.text、.rodata、.data、.bss等
-    // 不同逻辑段是关联的，但不一定连续
+    // 不同逻辑段是关联的，但不一定相邻
     areas: Vec<MapArea>,
 }
 
@@ -280,7 +280,6 @@ impl MemorySet {
         self.page_table.translate(vpn)
     }
 
-    #[allow(unused)]
     pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
         if let Some(area) = self
             .areas
@@ -294,7 +293,6 @@ impl MemorySet {
         }
     }
 
-    #[allow(unused)]
     pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
         if let Some(area) = self
             .areas
@@ -370,13 +368,12 @@ impl MapArea {
         page_table.map(vpn, ppn, pte_flags);
     }
 
-    #[allow(unused)]
     // 取消给定虚拟页号到物理页号的映射，并更新到页表上
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         match self.map_type {
             MapType::Identical => {}
             MapType::Framed => {
-                // 移除后，该物理页号将被回收（回到物理页帧分配器的可用内存上）
+                // 该物理页号将被回收，可被重新分配
                 self.data_frames.remove(&vpn);
             }
         }
@@ -390,15 +387,14 @@ impl MapArea {
         }
     }
 
-    #[allow(unused)]
     // 取消整个逻辑段到物理页的映射，并更新到页表上
+    #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
     }
 
-    #[allow(unused)]
     pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
             self.unmap_one(page_table, vpn)
@@ -407,7 +403,6 @@ impl MapArea {
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
 
-    #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
             self.map_one(page_table, vpn)
@@ -440,7 +435,6 @@ impl MapArea {
     }
 }
 
-#[allow(unused)]
 // 测试内核空间的多级页表是否正确设置
 pub fn remap_test() {
     extern "C" {
@@ -451,7 +445,7 @@ pub fn remap_test() {
         fn sdata();
         fn edata();
     }
-    let mut kernel_space = KERNEL_SPACE.exclusive_access();
+    let kernel_space = KERNEL_SPACE.exclusive_access();
     let mid_text: VirtAddr = ((stext as usize + etext as usize) / 2).into();
     let mid_rodata: VirtAddr = ((srodata as usize + erodata as usize) / 2).into();
     let mid_data: VirtAddr = ((sdata as usize + edata as usize) / 2).into();
@@ -470,5 +464,5 @@ pub fn remap_test() {
         .translate(mid_data.floor())
         .unwrap()
         .executable(),);
-    println!("remap_test passed!");
+    println_kernel!("remap_test passed!");
 }

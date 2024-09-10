@@ -77,13 +77,23 @@ pub fn trap_handler() -> ! {
             TASK_MANAGER.suspend_current_and_run_next();
         }
         // 访存异常
-        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
-            println_kernel!("PageFault in application, kernel killed it.");
+        Trap::Exception(Exception::StoreFault)
+        | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
+            let task_id = TASK_MANAGER.get_current_task_id();
+            println_kernel!(
+                "PageFault in App {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
+                task_id,
+                stval,
+                cx.sepc
+            );
             TASK_MANAGER.exit_current_and_run_next();
         }
         // 非法指令
         Trap::Exception(Exception::IllegalInstruction) => {
-            println_kernel!("IllegalInstruction in application, kernel killed it.");
+            let task_id = TASK_MANAGER.get_current_task_id();
+            println_kernel!("IllegalInstruction in App {}, killed by kernel.", task_id);
             TASK_MANAGER.exit_current_and_run_next();
         }
         // 暂时不支持的Trap类型

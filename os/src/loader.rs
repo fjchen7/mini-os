@@ -1,9 +1,5 @@
 //! 将用户应用程序加载到内存中
 
-use crate::config::*;
-use crate::trap::TrapContext;
-use core::arch::asm;
-
 // 返回应用程序的总数
 pub fn get_num_app() -> usize {
     extern "C" {

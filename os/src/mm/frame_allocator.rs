@@ -51,6 +51,8 @@ impl FrameAllocator for StackFrameAllocator {
         }
     }
 
+    // 回收物理页帧
+    // 所谓的回收，只是标记该物理页帧可以被重新分配
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
         // 合法性检查

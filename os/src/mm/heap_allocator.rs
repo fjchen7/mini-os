@@ -3,7 +3,7 @@
 use crate::config::KERNEL_HEAP_SIZE;
 use buddy_system_allocator::LockedHeap;
 
-// 指定全局内存分配器
+// 指定全局内存分配器，以使用需要堆分配的数据结构，如String、Vec等。
 // LockedHeap实现了std::alloc::GlobalAlloc
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
@@ -27,7 +27,6 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
     panic!("Heap allocation error, layout = {:?}", layout);
 }
 
-#[allow(unused)]
 // 该函数用于测试，可放进main里。
 pub fn heap_test() {
     use alloc::boxed::Box;
@@ -51,5 +50,5 @@ pub fn heap_test() {
     }
     assert!(bss_range.contains(&(v.as_ptr() as usize)));
     drop(v);
-    println!("heap_test passed!");
+    println_kernel!("heap_test passed!");
 }

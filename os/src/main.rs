@@ -7,8 +7,6 @@
 // 开启alloc_error_handler特性
 #![feature(alloc_error_handler)]
 #![allow(unreachable_code)]
-use core::arch::global_asm;
-use task::TASK_MANAGER;
 
 #[macro_use]
 mod console;
@@ -24,20 +22,21 @@ pub mod task;
 mod timer;
 pub mod trap;
 
-// 引入Rust内置的alloc库，用于动态内存分配
+// 引入内置的alloc库，用于动态内存分配
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
 
-// 载入汇编代码
+// 加载汇编代码
+use core::arch::global_asm;
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("link_app.S"));
 
-// 不同的编译器，在编译时，会修改函数/变量的符号名，以做到解决命名冲突或增加类型安全等。
-// 这叫做name mangling，不同的编译器有自身的策略。
+// 编译器在编译时，可能修改函数/变量的符号名，来解决命名冲突、保证类型安全或做到其他优化。
+// 这叫做name mangling，不同的编译器有不同的策略。
 //
-// #[no_mangle]的作用：告诉编译器不修改函数的符号（name mangling）
-// 我们要在汇编代码里调用Rust函数，因此要确保函数符号不被修改。否则，汇编代码将找不到该函数。
+// 我们要在汇编代码里调用rust_main方法。它是通过该函数的符号名来找到该方法的。
+// #[no_mangle]的作用是，告诉编译器不要修改函数的符号名。这样汇编代码才能找到该函数。
 #[no_mangle]
 pub fn rust_main() -> ! {
     clear_bss();
@@ -45,12 +44,11 @@ pub fn rust_main() -> ! {
     println_kernel!("Hello, world!");
     mm::init();
     println_kernel!("Init Memory Management");
-    mm::remap_test();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    TASK_MANAGER.run_first_task();
-    panic!("Unreachable in rust_main!");
+    task::TASK_MANAGER.run_first_task();
+    unreachable!("Never reach end of rust_main");
 }
 
 // 清零bss段（未初始化的全局变量）

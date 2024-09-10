@@ -2,7 +2,8 @@ use crate::{task::TASK_MANAGER, timer::get_time_ms};
 
 // 退出程序
 pub fn sys_exit(exit_code: i32) -> ! {
-    println_kernel!("Application exited with code {}", exit_code);
+    let task_id = TASK_MANAGER.get_current_task_id();
+    println_kernel!("App {} exited with code {}", task_id, exit_code);
     TASK_MANAGER.exit_current_and_run_next();
     panic!("Unreachable in sys_exit!");
 }
@@ -18,7 +19,7 @@ pub fn sys_get_time() -> isize {
     get_time_ms() as isize
 }
 
-// 调整堆的大小。返回新的堆顶地址。
+// 增加或减少堆的大小。返回旧的堆顶地址。
 // brk表示堆顶指针，称为program break。
 pub fn sys_sbrk(size: i32) -> isize {
     if let Some(old_brk) = TASK_MANAGER.change_current_program_brk(size) {

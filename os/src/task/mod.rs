@@ -41,9 +41,9 @@ pub struct TaskManagerInner {
 lazy_static! {
     // 用于管理任务的全局变量
     pub static ref TASK_MANAGER: TaskManager = {
-        println!("init TASK_MANAGER");
+        println_kernel!("init TASK_MANAGER");
         let num_app = get_num_app();
-        println!("num_app = {}", num_app);
+        println_kernel!("num_app = {}", num_app);
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
             let elf = get_app_data(i);
@@ -88,7 +88,7 @@ impl TaskManager {
             self.switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
         }
         // __switch修改了pc寄存器，不会执行到这里
-        panic!("unreachable in run_first_task!");
+        unreachable!("__switch should change the pc and go to the next task");
     }
 
     // 将当前正在运行的任务的状态，从Running改为Ready
@@ -132,9 +132,9 @@ impl TaskManager {
             }
             // 此处会回到用户态
         } else {
-            println!("All applications completed!");
-            println!(
-                "task switch time: {} us",
+            println_kernel!("All applications completed!");
+            println_kernel!(
+                "Task switch time: {} us",
                 self.switch_time.exclusive_access()
             );
             shutdown(false);
@@ -173,5 +173,9 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.tasks[cur].change_program_brk(size)
+    }
+
+    pub fn get_current_task_id(&self) -> usize {
+        self.inner.exclusive_access().current_task
     }
 }
