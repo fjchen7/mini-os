@@ -14,7 +14,7 @@ pub struct TaskControlBlock {
     pub memory_set: MemorySet,
     // Trap上下文存放的物理页。它的虚拟页是地址空间的次高页。
     pub trap_cx_ppn: PhysPageNum,
-    // 应用数据的大小，也就是地址空间中，从0x0到用户栈结束所包含的字节
+    // 应用数据的大小：地址空间中，从0x0到用户栈结束所包含的字节
     #[allow(unused)]
     pub base_size: usize,
     // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。

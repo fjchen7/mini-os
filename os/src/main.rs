@@ -7,8 +7,6 @@
 // 开启alloc_error_handler特性
 #![feature(alloc_error_handler)]
 #![allow(unreachable_code)]
-use core::arch::global_asm;
-use task::TASK_MANAGER;
 
 #[macro_use]
 mod console;
@@ -24,12 +22,13 @@ pub mod task;
 mod timer;
 pub mod trap;
 
-// 引入Rust内置的alloc库，用于动态内存分配
+// 引入内置的alloc库，用于动态内存分配
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
 
-// 载入汇编代码
+// 加载汇编代码
+use core::arch::global_asm;
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("link_app.S"));
 
@@ -45,11 +44,10 @@ pub fn rust_main() -> ! {
     println_kernel!("Hello, world!");
     mm::init();
     println_kernel!("Init Memory Management");
-    mm::remap_test();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    TASK_MANAGER.run_first_task();
+    task::TASK_MANAGER.run_first_task();
     panic!("Unreachable in rust_main!");
 }
 

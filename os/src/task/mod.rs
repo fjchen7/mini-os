@@ -174,4 +174,8 @@ impl TaskManager {
         let cur = inner.current_task;
         inner.tasks[cur].change_program_brk(size)
     }
+
+    pub fn get_current_task_id(&self) -> usize {
+        self.inner.exclusive_access().current_task
+    }
 }
