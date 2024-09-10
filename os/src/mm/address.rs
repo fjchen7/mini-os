@@ -215,7 +215,7 @@ impl StepByOne for VirtPageNum {
 }
 
 #[derive(Copy, Clone)]
-// 一个简单的Range类结构
+// 简单的Range结构体，范围为[l, r)
 pub struct SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,

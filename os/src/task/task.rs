@@ -17,6 +17,11 @@ pub struct TaskControlBlock {
     // 应用数据的大小，也就是地址空间中，从0x0到用户栈结束所包含的字节
     #[allow(unused)]
     pub base_size: usize,
+    // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
+    pub heap_bottom: usize,
+    // 堆的顶部，即堆的结束地址。数字大。
+    // 这个指针的名字就叫program break。
+    pub program_brk: usize,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -62,6 +67,8 @@ impl TaskControlBlock {
             memory_set,
             trap_cx_ppn,
             base_size: user_sp,
+            heap_bottom: user_sp,  // 初始化的堆为空
+            program_brk: user_sp,
         };
         // 初始化程序的TrapContext
         let trap_cx = task_control_block.get_trap_cx();
@@ -73,5 +80,28 @@ impl TaskControlBlock {
             trap_handler as usize,
         );
         task_control_block
+    }
+
+    // 增加或减少堆的大小
+    // 改变成功时，返回原来堆的结束位置（最高位）
+    pub fn change_program_brk(&mut self, size: i32) -> Option<usize> {
+        let old_break = self.program_brk;
+        let new_brk = self.program_brk as isize + size as isize;
+        if new_brk < self.heap_bottom as isize {
+            return None;
+        }
+        let heap_bottom = VirtAddr(self.heap_bottom);
+        let new_end = VirtAddr(new_brk as usize);
+        let result = if size < 0 {
+            self.memory_set.shrink_to(heap_bottom, new_end)
+        } else {
+            self.memory_set.append_to(heap_bottom, new_end)
+        };
+        if result {
+            self.program_brk = new_brk as usize;
+            Some(old_break)
+        } else {
+            None
+        }
     }
 }

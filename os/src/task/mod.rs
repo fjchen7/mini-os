@@ -167,4 +167,11 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].get_trap_cx()
     }
+
+    // 改变当前任务的堆大小
+    pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].change_program_brk(size)
+    }
 }
