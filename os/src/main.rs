@@ -6,9 +6,8 @@
 #![feature(panic_info_message)]
 // 开启alloc_error_handler特性
 #![feature(alloc_error_handler)]
-
+#![allow(unreachable_code)]
 use core::arch::global_asm;
-use log::*;
 use task::TASK_MANAGER;
 
 #[macro_use]
@@ -41,15 +40,17 @@ global_asm!(include_str!("link_app.S"));
 // 我们要在汇编代码里调用Rust函数，因此要确保函数符号不被修改。否则，汇编代码将找不到该函数。
 #[no_mangle]
 pub fn rust_main() -> ! {
-    // 内核初始化
     clear_bss();
-    log_memory();
-    println!("Hello, world!");
+    logging::init();
+    println_kernel!("Hello, world!");
+    mm::init();
+    println_kernel!("Init Memory Management");
+    mm::remap_test();
     trap::init();
-    // loader::load_apps();
     trap::enable_timer_interrupt();
-    timer::set_next_trigger(); // 设置第一个时钟中断
+    timer::set_next_trigger();
     TASK_MANAGER.run_first_task();
+    panic!("Unreachable in rust_main!");
 }
 
 // 清零bss段（未初始化的全局变量）
@@ -61,42 +62,4 @@ fn clear_bss() {
     }
     // 将.bss段清零
     (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) })
-}
-
-fn log_memory() {
-    logging::init();
-    extern "C" {
-        // .text段的起始和结束地址
-        fn stext();
-        fn etext();
-        // .rodata段的起始和结束地址
-        fn srodata();
-        fn erodata();
-        // .data段的起始和结束地址
-        fn sdata();
-        fn edata();
-        // .bss段的起始和结束地址
-        fn sbss();
-        fn ebss();
-        fn boot_stack_lower_bound(); // 栈底
-        fn boot_stack_top(); // 栈顶
-    }
-    warn!(
-        "[kernel] boot_stack top=bottom={:#x}, lower_bound={:#x}",
-        boot_stack_top as usize, boot_stack_lower_bound as usize
-    );
-    error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
-    info!(
-        "[kernel] .data [{:#x}, {:#x})",
-        sdata as usize, edata as usize
-    );
-    debug!(
-        "[kernel] .rodata [{:#x}, {:#x})",
-        srodata as usize, erodata as usize
-    );
-    trace!(
-        "[kernel] .text [{:#x}, {:#x})",
-        stext as usize,
-        etext as usize
-    );
 }

@@ -13,8 +13,7 @@ static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/";
 // 生成src/link_app.S文件，用于链接用户程序
 // 执行cargo build前，会执行本脚本
 fn insert_app_data() -> Result<()> {
-    // 切换到../user项目，编译并在target/riscv64gc-unknown-none-elf/release/目录
-    // 生成裁剪过的二进制ELF文件，如app.bin。
+    // 切换到../user项目，编译程序的ELF二进制文件
     Command::new("make")
         .arg("build")
         .current_dir("../user")
@@ -48,16 +47,23 @@ _num_app:
     }
     writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
 
+    writeln!(
+        f,
+        r#"
+    /* 要注意：
+        - align 3对齐到8字节。我们用的xmas-elf库在解析ELF时，可能不进行对齐。这样能保证不触发内存读写不对齐的异常。
+        - 先前使用 incbin "*.bin"，放入裁剪过元数据的ELF二进制。而现在放入完整的ELF二进制。*/"#
+    )?;
     for (idx, app) in apps.iter().enumerate() {
         println!("app_{}: {}", idx, app);
         writeln!(
             f,
-            r#"
-    .section .data
+            r#"    .section .data
     .global app_{0}_start
     .global app_{0}_end
+    .align 3
 app_{0}_start:
-    .incbin "{2}{1}.bin"
+    .incbin "{2}{1}"
 app_{0}_end:"#,
             idx, app, TARGET_PATH
         )?;

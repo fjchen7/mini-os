@@ -125,7 +125,6 @@ pub fn trap_return() -> ! {
             options(noreturn)
         );
     }
-    panic!("Unreachable in back_to_user!");
 }
 
 pub use context::TrapContext;

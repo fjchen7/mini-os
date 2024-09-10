@@ -10,7 +10,7 @@ use crate::{
     mm::address::StepByOne,
     sync::UPSafeCell,
 };
-use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec, vec::Vec};
 use core::{arch::asm, cmp::min};
 use lazy_static::*;
 use riscv::register::satp;
@@ -129,73 +129,50 @@ impl MemorySet {
         let mut memory_set = Self::new_bare();
         // 映射跳板
         memory_set.map_trampoline();
-        // 映射各个逻辑段。使用恒等映射，即虚拟页号等于物理页号，且需要设置权限。
-        println!(
-            "mapping .text section [{:#x}, {:#x})",
-            stext as usize, etext as usize
-        );
-        memory_set.push(
-            MapArea::new(
-                (stext as usize).into(),
-                (etext as usize).into(),
+        println_kernel!("Mapping Kernel Memory...");
+        let sections = vec![
+            (
+                ".text",
+                stext as usize,
+                etext as usize,
                 MapType::Identical,
                 MapPermission::R | MapPermission::X, // .text区不可修改
             ),
-            None,
-        );
-        println!(
-            "mapping .rodata section [{:#x}, {:#x})",
-            srodata as usize, erodata as usize
-        );
-        memory_set.push(
-            MapArea::new(
-                (srodata as usize).into(),
-                (erodata as usize).into(),
+            (
+                ".rodata",
+                srodata as usize,
+                erodata as usize,
                 MapType::Identical,
                 MapPermission::R, // .rodata区不可修改，不可执行
             ),
-            None,
-        );
-        println!(
-            "mapping .data section [{:#x}, {:#x})",
-            sdata as usize, edata as usize
-        );
-        memory_set.push(
-            MapArea::new(
-                (sdata as usize).into(),
-                (edata as usize).into(),
+            (
+                ".data",
+                sdata as usize,
+                edata as usize,
                 MapType::Identical,
                 MapPermission::R | MapPermission::W, // .data区不可执行
             ),
-            None,
-        );
-        println!(
-            "mapping .bss section [{:#x}, {:#x})",
-            sbss_with_stack as usize, ebss as usize
-        );
-        memory_set.push(
-            MapArea::new(
-                (sbss_with_stack as usize).into(),
-                (ebss as usize).into(),
+            (
+                ".bss",
+                sbss_with_stack as usize,
+                ebss as usize,
                 MapType::Identical,
-                MapPermission::R | MapPermission::W,
+                MapPermission::R | MapPermission::W, // .bss区不可执行
             ),
-            None,
-        );
-        // 映射物理内存。由内核数据段的结束地址开始。
-        println!(
-            "mapping physical memory [{:#x}, {:#x})",
-            ekernel as usize, MEMORY_END
-        );
-        memory_set.push(
-            MapArea::new(
-                (ekernel as usize).into(),
-                MEMORY_END.into(),
+            (
+                "physical memory",
+                ekernel as usize,
+                MEMORY_END,
                 MapType::Identical,
-                MapPermission::R | MapPermission::W,
+                MapPermission::R | MapPermission::W, // 物理内存区域不可执行
             ),
-            None,
-        );
+        ];
+
+        for (name, start, end, map_type, map_perm) in sections {
+            println_kernel!("{:<15} [{:#010x}, {:#010x})", name, start, end);
+            let map_area = MapArea::new(start.into(), end.into(), map_type, map_perm);
+            memory_set.push(map_area, None);
+        }
         memory_set
     }
 
@@ -258,8 +235,9 @@ impl MemorySet {
         // 初始化保护页和用户栈
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_bottom: usize = max_end_va.into();
-        // 设置保护页（guard page），大小为一个页
+        // 映射保护页（guard page），大小为一个页
         user_stack_bottom += PAGE_SIZE;
+        // 映射用户栈
         let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
         memory_set.push(
             MapArea::new(

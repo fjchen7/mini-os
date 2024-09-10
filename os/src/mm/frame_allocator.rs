@@ -91,7 +91,7 @@ impl Drop for FrameTracker {
 }
 
 lazy_static! {
-    // 全局的物理页帧分配器
+    // 全局的物理页帧分配器。分配的页会映射在内核地址空间的系统内核栈上。
     pub static ref FRAME_ALLOCATOR: UPSafeCell<StackFrameAllocator> =
         unsafe { UPSafeCell::new(StackFrameAllocator::new()) };
 }

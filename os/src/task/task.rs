@@ -15,13 +15,13 @@ pub struct TaskControlBlock {
     // Trap上下文存放的物理页。它的虚拟页是地址空间的次高页。
     pub trap_cx_ppn: PhysPageNum,
     // 应用数据的大小，也就是地址空间中，从0x0到用户栈结束所包含的字节
+    #[allow(unused)]
     pub base_size: usize,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-// 将任务的状态
+// 任务的状态
 pub enum TaskStatus {
-    UnInit,  // 未初始化
     Ready,   // 准备运行
     Running, // 正在运行
     Exited,  // 已退出
