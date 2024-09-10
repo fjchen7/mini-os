@@ -5,7 +5,7 @@
 #[macro_use]
 pub mod console;
 mod lang_items;
-pub mod syscall;
+mod syscall;
 
 #[no_mangle]
 // 链接时用的符号，分为强链接和弱链接：
@@ -29,4 +29,23 @@ pub extern "C" fn _start() -> ! {
     let exist_code = main();
     syscall::sys_exit(exist_code);
     panic!("unreachable after sys_exit!");
+}
+
+use syscall::*;
+
+pub fn write(fd: usize, buf: &[u8]) -> isize {
+    sys_write(fd, buf)
+}
+pub fn exit(exit_code: i32) -> isize {
+    sys_exit(exit_code)
+}
+pub fn yield_() -> isize {
+    sys_yield()
+}
+pub fn get_time() -> isize {
+    sys_get_time()
+}
+
+pub fn sbrk(size: i32) -> isize {
+    sys_sbrk(size)
 }
