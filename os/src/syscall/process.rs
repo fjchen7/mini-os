@@ -17,3 +17,13 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time() -> isize {
     get_time_ms() as isize
 }
+
+// 调整堆的大小。返回新的堆顶地址。
+// brk表示堆顶指针，称为program break。
+pub fn sys_sbrk(size: i32) -> isize {
+    if let Some(old_brk) = TASK_MANAGER.change_current_program_brk(size) {
+        old_brk as isize
+    } else {
+        -1
+    }
+}
