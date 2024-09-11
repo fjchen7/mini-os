@@ -2,6 +2,7 @@
 // 使用全局变量`TASK_MANAGER`来管理内核中的任务
 
 mod context;
+mod pid;
 mod switch;
 
 #[allow(clippy::module_inception)]
