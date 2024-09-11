@@ -1,11 +1,25 @@
 #![no_std]
 #![feature(panic_info_message)]
 #![feature(linkage)] // 支持弱链接的标记
+#![feature(alloc_error_handler)]
 
 #[macro_use]
 pub mod console;
 mod lang_items;
 mod syscall;
+
+use buddy_system_allocator::LockedHeap;
+const USER_HEAP_SIZE: usize = 16384;
+static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
+
+// 指定全局内存分配器，以使用需要堆分配的数据结构，如String、Vec等。
+#[global_allocator]
+static HEAP: LockedHeap = LockedHeap::empty();
+
+#[alloc_error_handler]
+pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
+    panic!("Heap allocation error, layout = {:?}", layout);
+}
 
 #[no_mangle]
 // 链接时用的符号，分为强链接和弱链接：
@@ -25,18 +39,25 @@ fn main() -> i32 {
 // 将该函数编译后的汇编代码，放入内存段.text.entry，表示程序的入口点（见文件linker.ld）。
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
+    unsafe {
+        HEAP.lock()
+            .init(HEAP_SPACE.as_ptr() as usize, USER_HEAP_SIZE);
+    }
     // 下面要进入的main方法，由应用程序各自实现。链接生成ELF时，会替换此处的默认main实现。
     let exist_code = main();
-    syscall::sys_exit(exist_code);
-    panic!("unreachable after sys_exit!");
+    exit(exist_code);
 }
 
 use syscall::*;
 
+pub fn read(fd: usize, buf: &mut [u8]) -> isize {
+    sys_read(fd, buf)
+}
+
 pub fn write(fd: usize, buf: &[u8]) -> isize {
     sys_write(fd, buf)
 }
-pub fn exit(exit_code: i32) -> isize {
+pub fn exit(exit_code: i32) -> ! {
     sys_exit(exit_code)
 }
 pub fn yield_() -> isize {
@@ -46,6 +67,49 @@ pub fn get_time() -> isize {
     sys_get_time()
 }
 
+pub fn sleep(period_ms: usize) {
+    let start = sys_get_time();
+    while sys_get_time() < start + period_ms as isize {
+        sys_yield();
+    }
+}
+
 pub fn sbrk(size: i32) -> isize {
     sys_sbrk(size)
+}
+
+pub fn getpid() -> isize {
+    sys_getpid()
+}
+
+pub fn fork() -> isize {
+    sys_fork()
+}
+
+pub fn exec(path: &str) -> isize {
+    sys_exec(path)
+}
+
+// 等待任意一个子进程结束
+pub fn wait(exit_code: &mut i32) -> isize {
+    blocking_waitpid(-1, exit_code)
+}
+
+// 等待指定pid的子进程结结束
+pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
+    blocking_waitpid(pid as isize, exit_code)
+}
+
+// 等待指定pid的子进程结束，并回收其资源。pid为-1时，表示等待任意子进程。
+fn blocking_waitpid(pid: isize, exit_code: &mut i32) -> isize {
+    loop {
+        match sys_waitpid(pid, exit_code as *mut _) {
+            // 如果子进程都未结束，则让出CPU
+            -2 => {
+                sys_yield();
+            }
+            // 返回子进程的PID（正常结束）或-1（子进程不存在）
+            exit_pid => return exit_pid,
+        }
+    }
 }

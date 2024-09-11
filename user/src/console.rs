@@ -1,13 +1,20 @@
 use core::fmt::{self, Write};
 
+const STDIN: usize = 0;
 const STDOUT: usize = 1;
+
+// 从标准输入读取一个字符
+pub fn getchar() -> u8 {
+    let mut c = [0u8; 1];
+    super::read(STDIN, &mut c);
+    c[0]
+}
 
 struct Stdout;
 
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        use crate::syscall::sys_write;
-        sys_write(STDOUT, s.as_bytes());
+        super::write(STDOUT, s.as_bytes());
         Ok(())
     }
 }

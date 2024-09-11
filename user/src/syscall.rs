@@ -1,9 +1,25 @@
 // 系统调用号
+const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
 const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
 const SYSCALL_SBRK: usize = 214;
+const SYSCALL_GETPID: usize = 172;
+const SYSCALL_FORK: usize = 220;
+const SYSCALL_EXEC: usize = 221;
+const SYSCALL_WAITPID: usize = 260;
+
+// 读取文件到内存缓冲区
+// - fd：待读取文件的文件描述符；
+// - buf：缓冲区的起始地址。读出的最大长度为buf.len()。
+// - 返回值：实际读取的字节数。-1表示错误。
+pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
+    syscall(
+        SYSCALL_READ,
+        [fd, buffer.as_mut_ptr() as usize, buffer.len()],
+    )
+}
 
 // 写文件到缓冲区
 // - fd：待写入文件的文件描述符；
@@ -16,9 +32,9 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
 }
 
 // 退出应用程序
-// - exit_code：程序的退出码。
-pub fn sys_exit(exit_code: i32) -> isize {
-    syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0])
+pub fn sys_exit(exit_code: i32) -> ! {
+    syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0]);
+    unreachable!("sys_exit never returns!")
 }
 
 // 程序主动让出CPU，调度到其他程序
@@ -26,14 +42,41 @@ pub fn sys_yield() -> isize {
     syscall(SYSCALL_YIELD, [0, 0, 0])
 }
 
+// 增加或减少堆的大小。返回旧的堆顶地址。
+pub fn sys_sbrk(size: i32) -> isize {
+    syscall(SYSCALL_SBRK, [size as usize, 0, 0])
+}
+
 // 获取CPU时间（ms）
 pub fn sys_get_time() -> isize {
     syscall(SYSCALL_GET_TIME, [0, 0, 0])
 }
 
-// 增加或减少堆的大小。返回旧的堆顶地址。
-pub fn sys_sbrk(size: i32) -> isize {
-    syscall(SYSCALL_SBRK, [size as usize, 0, 0])
+pub fn sys_getpid() -> isize {
+    syscall(SYSCALL_GETPID, [0, 0, 0])
+}
+
+// 复制出一个子进程，返回子进程的PID
+pub fn sys_fork() -> isize {
+    syscall(SYSCALL_FORK, [0, 0, 0])
+}
+
+// 将ELF可执行文件加载到当前进程的地址空间，并开始执行。
+// - path：ELF文件的路径。
+// - 返回值：执行成功则不返回，失败则返回-1。
+pub fn sys_exec(path: &str) -> isize {
+    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, 0, 0])
+}
+
+// 找到当前进程的僵尸子进程，回收全部资源
+// - pid：要找的子进程PID，-1表示等待任意子进程；
+// - exit_code：保存子进程的返回值的地址，为0表示不保存。
+// - 返回值：
+//   - -1：找不到对应的子进程；
+//   - -2：等待的子进程均未退出；
+//   - 其他：结束的子进程的PID
+pub fn sys_waitpid(pid: isize, exit_code: *mut i32) -> isize {
+    syscall(SYSCALL_WAITPID, [pid as usize, exit_code as usize, 0])
 }
 
 // 封装系统调用的调用
