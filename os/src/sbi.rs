@@ -8,6 +8,12 @@ pub fn console_putchar(c: usize) {
     sbi_rt::legacy::console_putchar(c);
 }
 
+// 从控制台获取字符
+pub fn console_getchar() -> usize {
+    #[allow(deprecated)]
+    sbi_rt::legacy::console_getchar()
+}
+
 // 关机
 // failure为false时，表示正常关机
 pub fn shutdown(failure: bool) -> ! {

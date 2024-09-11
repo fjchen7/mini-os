@@ -75,8 +75,8 @@ impl MemorySet {
         }
     }
 
-    // 插入一个逻辑段到该地址空间中
-    // 如果它是以Framed方式映射到物理页的，还可以提供数据，用来初始化这个逻辑段
+    // 为逻辑段分配物理页，并将其加入到该地址空间。
+    // 如果它以Framed方式映射，还可以提供数据，用来初始化映射到的物理页。
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -85,7 +85,7 @@ impl MemorySet {
         self.areas.push(map_area);
     }
 
-    // 插入一个范围为 [start_va, end_va) 的逻辑段，映射方式为Framed
+    // 以Frame映射方式，为逻辑段分配物理页，并将其加入到该地址空间
     // 这里假设，该逻辑段不与已有的逻辑段重叠
     pub fn insert_framed_area(
         &mut self,
@@ -306,6 +306,29 @@ impl MemorySet {
         }
     }
 
+    // 复制地址空间。这将为新的地址空间分配新的物理页内存，包括页表。
+    // 该方法用于fork系统调用。
+    pub fn from_existed_user(user_space: &Self) -> Self {
+        let mut memory_set = Self::new_bare();
+        // 单独映射跳板，因为它不归MemorySet管理
+        memory_set.map_trampoline();
+        // 复制逻辑段
+        for area in user_space.areas.iter() {
+            let new_area = MapArea::from_another(area);
+            // 申请新的内存，分配新的物理页
+            memory_set.push(new_area, None);
+            // 将数据拷贝到新的物理页中
+            for vpn in area.vpn_range {
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                dst_ppn
+                    .get_bytes_array()
+                    .copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
+        memory_set
+    }
+
     // 设置CSR寄存器satp的值，激活该地址空间（只有内核空间才调用）
     pub fn activate(&self) {
         let satp = self.page_table.token();
@@ -338,6 +361,11 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    //
+    pub fn recycle_data_pages(&mut self) {
+        self.areas.clear();
+    }
 }
 
 impl MapArea {
@@ -358,7 +386,17 @@ impl MapArea {
         }
     }
 
-    // 将给定虚拟页号映射到物理页号，并将这个映射关系，更新到页表中的对应页表项
+    // 复制逻辑段
+    pub fn from_another(another: &Self) -> Self {
+        Self {
+            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
+            data_frames: BTreeMap::new(),
+            map_type: another.map_type,
+            map_perm: another.map_perm,
+        }
+    }
+
+    // 为虚拟页号分配物理页号。并将这个映射关系，更新到页表中的对应页表项
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         // 找到虚拟页号对应的物理页号。有两种方式
@@ -380,7 +418,7 @@ impl MapArea {
         page_table.map(vpn, ppn, pte_flags);
     }
 
-    // 取消给定虚拟页号到物理页号的映射，并更新到页表上
+    // 回收虚拟页号映射的物理页，并在页表上取消该映射关系。
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         match self.map_type {
             MapType::Identical => {}
@@ -392,14 +430,14 @@ impl MapArea {
         page_table.unmap(vpn);
     }
 
-    // 将整个逻辑段的虚拟页号，映射到物理页号，并将该映射关系更新到页表
+    // 为整个逻辑段分配物理页号，并更新到页表上
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
     }
 
-    // 取消整个逻辑段到物理页的映射，并更新到页表上
+    // 回收整个逻辑段映射到的物理页，并在页表上取消这些映射关系
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {

@@ -1,10 +1,11 @@
 //! 页表的数据结构表示，以及多级页表的实现。
 
-use alloc::vec;
 use alloc::vec::Vec;
+use alloc::{string::String, vec};
 use bitflags::*;
 use core::cmp::min;
 
+use super::address::PhysAddr;
 use super::{
     address::{PhysPageNum, StepByOne as _, VirtAddr, VirtPageNum},
     frame_allocator::{frame_alloc, FrameTracker},
@@ -107,6 +108,17 @@ impl PageTable {
         self.find_pte(vpn).map(|pte| *pte)
     }
 
+    // 找到虚拟地址对应的物理地址
+    pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
+        let vpn = va.clone().floor();
+        self.find_pte(vpn).map(|pte| {
+            let aligned_pa: PhysAddr = pte.ppn().into();
+            let offset = va.page_offset();
+            let aligned_pa_usize: usize = aligned_pa.into();
+            (aligned_pa_usize + offset).into()
+        })
+    }
+
     // 找到虚拟页号对应的页表项，如果不存在则创建。
     // 但返回的页表项不一定合法，需要调用者进一步判断。
     fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&'static mut PageTableEntry> {
@@ -176,8 +188,7 @@ impl PageTable {
     }
 }
 
-// 读出某个地址空间中的一段缓冲区中的数据
-// token表示地址空间，ptr和len分别表示该地址空间中要读出的区域的起始地址和长度
+// 在给定地址空间中，读出以ptr为起始地址，len为长度的缓冲区中的数据。
 pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;
@@ -197,4 +208,25 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+// 在给定地址空间中，读出以ptr为起始地址，`\0`结尾的字符串。
+pub fn translated_str(token: usize, ptr: *const u8) -> String {
+    let page_table = PageTable::from_token(token);
+    let mut string = String::new();
+    let mut va = ptr as usize;
+    loop {
+        // 读出该虚拟地址上的第一个字节
+        let ch: u8 = *(page_table
+            .translate_va(VirtAddr::from(va))
+            .unwrap()
+            .get_mut());
+        if ch == 0 {
+            break;
+        } else {
+            string.push(ch as char);
+            va += 1;
+        }
+    }
+    string
 }

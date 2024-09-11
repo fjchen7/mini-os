@@ -88,6 +88,10 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
     PROCESSOR.exclusive_access().current()
 }
 
+pub fn current_task_pid() -> usize {
+    current_task().unwrap().getpid()
+}
+
 // 获取当前正在运行的进程的地址空间的token
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();

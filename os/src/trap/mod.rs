@@ -3,7 +3,10 @@ mod context;
 use crate::{
     config::{TRAMPOLINE, TRAP_CONTEXT},
     syscall::syscall,
-    task::TASK_MANAGER,
+    task::{
+        current_task, current_task_pid, current_trap_cx, current_user_token,
+        exit_current_and_run_next, suspend_current_and_run_next, take_current_task,
+    },
     timer::set_next_trigger,
 };
 use core::arch::{asm, global_asm};
@@ -55,46 +58,51 @@ pub fn enable_timer_interrupt() {
 pub fn trap_handler() -> ! {
     // 简单起见，不考虑在内核态触发Trap的情况，直接panic。
     set_kernel_trap_entry();
-    // 执行该方法时，系统处于内核的地址空间中。
-    // 但应用的TrapContext保存在应用的地址空间中，没法以参数形式传给trap_handler。
-    let cx = TASK_MANAGER.get_current_trap_cx(); // 拿到TrapContext
     let scause = scause::read(); // 拿到Trap的发生原因
     let stval = stval::read(); // 拿到Trap发生时的附加信息
     match scause.cause() {
         // 系统调用。用户程序调用ecall指令时，会触发该类型的异常。
         Trap::Exception(Exception::UserEnvCall) => {
-            // CSR寄存器sepc，记录Trap发生之前执行的最后一条指令地址（即ecall指令）。
-            // 需要让sepc指向下一条指令，以便系统调用返回后，继续执行用户态的指令。
+            // CSR寄存器sepc，放着Trap发生之前执行的最后一条指令地址（即ecall指令）。
+            // 需要让sepc移动4字节，指向下一条指令，以便系统调用返回后，继续执行用户态的指令。
+            let mut cx = current_trap_cx();
             cx.sepc += 4;
             // 从寄存器x17中读取系统调用号，从x10, x11, x12中读取参数。
             // 执行系统调用，并将结果写回x10。
             // x10，x11，x12，x17，又名a0，a1，a2，a7
-            cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]);
+            // sys_exec会替换掉当前任务的Trap上下文。因此要重新拿一遍。
+            cx = current_trap_cx();
+            cx.x[10] = result as usize;
         }
         // 时钟中断
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
-            TASK_MANAGER.suspend_current_and_run_next();
+            suspend_current_and_run_next();
         }
         // 访存异常
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::InstructionFault)
+        | Trap::Exception(Exception::InstructionPageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            let task_id = TASK_MANAGER.get_current_task_id();
             println_kernel!(
-                "PageFault in App {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
-                task_id,
+                "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
+                scause.cause(),
+                current_task_pid(),
                 stval,
-                cx.sepc
+                current_trap_cx().sepc,
             );
-            TASK_MANAGER.exit_current_and_run_next();
+            exit_current_and_run_next(-2);
         }
         // 非法指令
         Trap::Exception(Exception::IllegalInstruction) => {
-            let task_id = TASK_MANAGER.get_current_task_id();
-            println_kernel!("IllegalInstruction in App {}, killed by kernel.", task_id);
-            TASK_MANAGER.exit_current_and_run_next();
+            println_kernel!(
+                "IllegalInstruction in PID {}, killed by kernel.",
+                current_task_pid()
+            );
+            exit_current_and_run_next(-3);
         }
         // 暂时不支持的Trap类型
         _ => {
@@ -114,7 +122,7 @@ pub fn trap_return() -> ! {
     // 重新设置Trap处理函数的入口地址
     set_user_trap_entry();
     let trap_cx_ptr = TRAP_CONTEXT;
-    let user_satp = TASK_MANAGER.get_current_token();
+    let user_satp = current_user_token();
     extern "C" {
         fn __alltraps();
         fn __restore();
