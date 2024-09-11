@@ -43,11 +43,12 @@ pub fn rust_main() -> ! {
     logging::init();
     println_kernel!("Hello, world!");
     mm::init();
-    println_kernel!("Init Memory Management");
+    task::add_initproc();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    task::TASK_MANAGER.run_first_task();
+    loader::list_apps();
+    task::run_tasks();
     unreachable!("Never reach end of rust_main");
 }
 

@@ -4,8 +4,8 @@ use crate::{
     config::{TRAMPOLINE, TRAP_CONTEXT},
     syscall::syscall,
     task::{
-        current_task, current_task_pid, current_trap_cx, current_user_token,
-        exit_current_and_run_next, suspend_current_and_run_next, take_current_task,
+        current_task_pid, current_trap_cx, current_user_token, exit_current_and_run_next,
+        suspend_current_and_run_next,
     },
     timer::set_next_trigger,
 };
@@ -41,7 +41,7 @@ fn set_user_trap_entry() {
 #[no_mangle]
 // 暂时不考虑在内核态触发Trap的情况。第9章会涉及。
 pub fn trap_from_kernel() -> ! {
-    todo!("a trap from kernel!");
+    panic!("a trap {:?} from kernel!", scause::read().cause())
 }
 
 // 初始化时钟中断

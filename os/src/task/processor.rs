@@ -1,5 +1,5 @@
 //!Implementation of [`Processor`] and Intersection of control flow
-use super::manager::TASK_MANAGER;
+use super::manager::fetch_task;
 use super::switch::__switch;
 use super::task::TaskControlBlock;
 use super::TaskContext;
@@ -50,7 +50,7 @@ lazy_static! {
 pub fn run_tasks() {
     loop {
         let mut processor = PROCESSOR.exclusive_access();
-        if let Some(task) = TASK_MANAGER.exclusive_access().fetch() {
+        if let Some(task) = fetch_task() {
             // 取出当前处理器的idle控制流的任务上下文。这是要被替换的任务。
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // 从任务管理器中取出接下来要切换的任务

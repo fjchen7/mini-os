@@ -19,6 +19,10 @@ lazy_static! {
         unsafe { UPSafeCell::new(PidAllocator::new()) };
 }
 
+pub fn pid_alloc() -> PidHandle {
+    PID_ALLOCATOR.exclusive_access().alloc()
+}
+
 impl PidAllocator {
     pub fn new() -> Self {
         PidAllocator {

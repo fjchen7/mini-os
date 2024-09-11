@@ -12,8 +12,8 @@ use crate::{
 
 // 退出程序
 pub fn sys_exit(exit_code: i32) -> ! {
-    let current_task = take_current_task().unwrap();
-    println_kernel!("PID {} exited with code {}", current_task.pid.0, exit_code);
+    let pid = current_task().unwrap().pid.0;
+    println_kernel!("PID {} exited with code {}", pid, exit_code);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
@@ -88,8 +88,9 @@ pub fn sys_fork() -> isize {
     let new_pid = new_task.pid.0;
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
     // 我们需要将子进程的fork返回值设为0，才能区分父子进程。返回值的地址在a0寄存器中。
-    trap_cx.x[10] = 0; // x[10]就是a0寄存器
-                       // 将子进程加入任务队列
+    // x[10]就是a0寄存器
+    trap_cx.x[10] = 0;
+    // 将子进程加入任务队列
     add_task(new_task);
     new_pid as isize
 }

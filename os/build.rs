@@ -5,21 +5,23 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-changed=../user/src/");
     println!("cargo:rerun-if-changed={}", TARGET_PATH);
+    build_user_app();
     insert_app_data().unwrap();
 }
 
-static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/";
-
-// 生成src/link_app.S文件，用于链接用户程序
-// 执行cargo build前，会执行本脚本
-fn insert_app_data() -> Result<()> {
+fn build_user_app() {
     // 切换到../user项目，编译程序的ELF二进制文件
     Command::new("make")
         .arg("build")
         .current_dir("../user")
         .output()
         .expect("Failed to execute command");
+}
 
+static TARGET_PATH: &str = "../user/target/riscv64gc-unknown-none-elf/release/";
+// 生成src/link_app.S文件，用于链接用户程序
+// 执行cargo build前，会执行本脚本
+fn insert_app_data() -> Result<()> {
     let mut f = File::create("src/link_app.S").unwrap();
     let mut apps: Vec<_> = read_dir("../user/src/bin")
         .unwrap()

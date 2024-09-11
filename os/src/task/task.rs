@@ -1,8 +1,8 @@
 use core::cell::RefMut;
 
 use super::{
-    pid::{KernelStack, PidHandle, PID_ALLOCATOR},
-    TaskContext,
+    pid::{KernelStack, PidHandle},
+    pid_alloc, TaskContext,
 };
 use crate::{
     config::TRAP_CONTEXT,
@@ -93,7 +93,7 @@ impl TaskControlBlock {
             .unwrap()
             .ppn();
         // 分配新的PID
-        let pid_handle = PID_ALLOCATOR.exclusive_access().alloc();
+        let pid_handle = pid_alloc();
         // 在内核地址空间中，为该PID分配内核栈
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.get_top();
@@ -139,7 +139,7 @@ impl TaskControlBlock {
             .unwrap()
             .ppn();
         // alloc a pid and a kernel stack in kernel space
-        let pid_handle = PID_ALLOCATOR.exclusive_access().alloc();
+        let pid_handle = pid_alloc();
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.get_top();
         let user_sp = parent_inner.base_size;
