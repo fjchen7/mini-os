@@ -4,7 +4,7 @@ use crate::{
     loader::get_app_data_by_name,
     mm::{translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
+        add_task, current_task, current_task_pid, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, take_current_task,
     },
     timer::get_time_ms,
@@ -32,12 +32,17 @@ pub fn sys_get_time() -> isize {
 // 增加或减少堆的大小。返回旧的堆顶地址。
 // brk表示堆顶指针，称为program break。
 pub fn sys_sbrk(size: i32) -> isize {
-    todo!("fix")
-    // if let Some(old_brk) = TASK_MANAGER.change_current_program_brk(size) {
-    //     old_brk as isize
-    // } else {
-    //     -1
-    // }
+    let current_task = current_task().unwrap();
+    if let Some(old_brk) = current_task.change_program_brk(size) {
+        old_brk as isize
+    } else {
+        -1
+    }
+}
+
+// 返回当前进程的PID
+pub fn sys_getpid() -> isize {
+    current_task_pid() as isize
 }
 
 // 找到当前进程的僵尸子进程，回收全部资源

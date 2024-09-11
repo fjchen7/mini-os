@@ -182,6 +182,8 @@ impl TaskControlBlock {
         inner.memory_set = memory_set;
         inner.trap_cx_ppn = trap_cx_ppn;
         inner.base_size = user_sp;
+        inner.heap_bottom = user_sp;
+        inner.program_brk = user_sp;
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -194,7 +196,7 @@ impl TaskControlBlock {
 
     // 增加或减少堆的大小
     // 改变成功时，返回原来堆的结束位置（最高位）
-    pub fn change_program_brk(&mut self, size: i32) -> Option<usize> {
+    pub fn change_program_brk(&self, size: i32) -> Option<usize> {
         let mut inner = self.inner_exclusive_access();
         let old_break = inner.program_brk;
         let new_brk = inner.program_brk as isize + size as isize;

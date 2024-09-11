@@ -56,7 +56,6 @@ impl PidAllocator {
 
 impl Drop for PidHandle {
     fn drop(&mut self) {
-        println_kernel!("drop pid {}", self.0);
         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
     }
 }
