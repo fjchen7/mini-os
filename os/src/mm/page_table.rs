@@ -230,3 +230,13 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     }
     string
 }
+
+// 在给定地址空间中，读出以ptr为起始地址的数据，转换成T类型，并返回其可变引用。
+pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
+    let page_table = PageTable::from_token(token);
+    let va = ptr as usize;
+    page_table
+        .translate_va(VirtAddr::from(va))
+        .unwrap()
+        .get_mut()
+}

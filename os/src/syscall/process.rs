@@ -1,6 +1,8 @@
+use alloc::sync::Arc;
+
 use crate::{
     loader::get_app_data_by_name,
-    mm::translated_str,
+    mm::{translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, take_current_task,
@@ -38,17 +40,44 @@ pub fn sys_sbrk(size: i32) -> isize {
     // }
 }
 
-// 等待子进程变成僵尸进程后，回收全部资源并返回
-// - pid：要等待的子进程的PID，-1表示等待任意子进程；
+// 找到当前进程的僵尸子进程，回收全部资源
+// - pid：要找的子进程PID，-1表示等待任意子进程；
 // - exit_code：保存子进程的返回值的地址，为0表示不保存。
 // - 返回值：
-//   - -1：等待的子进程不存在；
-//   - -2：等待的子进程均未结束；
+//   - -1：找不到对应的子进程；
+//   - -2：等待的子进程均未退出；
 //   - 其他：结束的子进程的PID。
-//
-// 目前该系统调用是阻塞的，会一直等待直到有子进程结束。
-pub fn sys_waitpid(pid: isize, exit_code: *mut i32) -> isize {
-    todo!()
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+    let task = current_task().unwrap();
+
+    let mut inner = task.inner_exclusive_access();
+    // 如果找不到对应的子进程，返回-1
+    if !inner
+        .children
+        .iter()
+        .any(|p| pid == -1 || pid as usize == p.getpid())
+    {
+        return -1;
+    }
+
+    // 找到一个僵尸子进程
+    let pair = inner.children.iter().enumerate().find(|(_, p)| {
+        p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
+    });
+
+    // 回收该僵尸子进程的资源
+    if let Some((idx, _)) = pair {
+        // 从父进程的子进程列表中移除
+        let child = inner.children.remove(idx);
+        assert_eq!(Arc::strong_count(&child), 1); // 保证它没有其他引用
+        let found_pid = child.getpid();
+        // 保存子进程的返回值到exit_code_ptr所指向的地址
+        let exit_code = child.inner_exclusive_access().exit_code;
+        *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+        found_pid as isize
+    } else {
+        -2
+    }
 }
 
 // 复制出一个子进程

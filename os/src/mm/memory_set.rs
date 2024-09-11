@@ -362,7 +362,7 @@ impl MemorySet {
         }
     }
 
-    //
+    // 回收该地址空间的物理页
     pub fn recycle_data_pages(&mut self) {
         self.areas.clear();
     }

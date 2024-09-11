@@ -52,7 +52,39 @@ pub const IDLE_PID: usize = 0;
 
 // 退出当前进程，并运行下一个进程
 pub fn exit_current_and_run_next(exit_code: i32) {
-    todo!()
+    let task = take_current_task().unwrap();
+
+    // 如果是idle进程退出，则直接关机
+    if task.getpid() == IDLE_PID {
+        println_kernel!("Idle process exit with exit_code {} ...", exit_code);
+        let failure = exit_code != 0;
+        shutdown(failure);
+    }
+
+    let mut inner = task.inner_exclusive_access();
+    // 将要退出的进程的状态设置为Zombie
+    inner.task_status = TaskStatus::Zombie;
+    inner.exit_code = exit_code;
+
+    // 将该任务的所有子进程，都移交给initproc
+    {
+        let mut initproc_inner = INITPROC.inner_exclusive_access();
+        for child in inner.children.iter() {
+            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+            initproc_inner.children.push(child.clone());
+        }
+        inner.children.clear();
+    }
+
+    // 回收分配给该进程的物理页。
+    // 这是子进程成为僵尸进程后，先回收的部分资源。剩余未回收的资源，由父进程或initproc进程回收。
+    inner.memory_set.recycle_data_pages();
+    drop(inner);
+    drop(task);
+
+    // 进入调度逻辑。该_unused变量，实际就是Processor下的idle_task_cx。
+    let mut _unused = TaskContext::zero_init();
+    schedule(&mut _unused as *mut _);
 }
 
 lazy_static! {
