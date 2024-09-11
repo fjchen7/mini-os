@@ -1,5 +1,8 @@
 //! 将用户应用程序加载到内存中
 
+use alloc::vec::Vec;
+use lazy_static::lazy_static;
+
 // 返回应用程序的总数
 pub fn get_num_app() -> usize {
     extern "C" {
@@ -24,4 +27,44 @@ pub fn get_app_data(app_id: usize) -> &'static [u8] {
             app_start[app_id + 1] - app_start[app_id],
         )
     }
+}
+
+lazy_static! {
+    // 所有应用程序的名字
+    // 从build.rs生成的link_app.S文件中定义的符号中获取
+    static ref APP_NAMES: Vec<&'static str> = {
+        let num_app = get_num_app();
+        extern "C" {
+            fn _app_names();
+        }
+        let mut start = _app_names as usize as *const u8;
+        let mut v = Vec::new();
+        unsafe {
+            for _ in 0..num_app {
+                let mut end = start;
+                while end.read_volatile() != b'\0' {
+                    end = end.add(1);
+                }
+                let slice = core::slice::from_raw_parts(start, end as usize - start as usize);
+                let str = core::str::from_utf8(slice).unwrap();
+                v.push(str);
+                start = end.add(1);
+            }
+        }
+        v
+    };
+}
+
+// 根据应用程序的名字，获取其ELF二进制数据
+pub fn get_app_data_by_name(name: &str) -> Option<&'static [u8]> {
+    APP_NAMES.iter().position(|&x| x == name).map(get_app_data)
+}
+
+// 打印所有应用程序的名字
+pub fn list_apps() {
+    println!("/**** APPS ****");
+    for app in APP_NAMES.iter() {
+        println!("{}", app);
+    }
+    println!("**************/")
 }

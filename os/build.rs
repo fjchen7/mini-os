@@ -50,6 +50,17 @@ _num_app:
     writeln!(
         f,
         r#"
+    /* 我们需要根据应用的名字来加载ELF到进程的地址空间，因此要记录该值。按app的顺序排列 */
+    .global _app_names
+_app_names:"#
+    )?;
+    for app in apps.iter() {
+        writeln!(f, r#"    .string "{}""#, app)?;
+    }
+
+    writeln!(
+        f,
+        r#"
     /* 要注意：
         - align 3对齐到8字节。我们用的xmas-elf库在解析ELF时，可能不进行对齐。这样能保证不触发内存读写不对齐的异常。
         - 先前使用 incbin "*.bin"，放入裁剪过元数据的ELF二进制。而现在放入完整的ELF二进制。*/"#
