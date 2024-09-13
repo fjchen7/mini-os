@@ -22,7 +22,6 @@ pub struct Inode {
 }
 
 impl Inode {
-    /// Create a vfs inode
     pub fn new(
         block_id: u32,
         block_offset: usize,
