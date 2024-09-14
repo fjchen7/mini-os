@@ -8,6 +8,9 @@ pub mod console;
 mod lang_items;
 mod syscall;
 
+#[macro_use]
+extern crate bitflags;
+
 use buddy_system_allocator::LockedHeap;
 const USER_HEAP_SIZE: usize = 16384;
 static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
@@ -49,6 +52,24 @@ pub extern "C" fn _start() -> ! {
 }
 
 use syscall::*;
+
+bitflags! {
+    pub struct OpenFlags: u32 {
+        const RDONLY = 0;       // 只读
+        const WRONLY = 1 << 0;  // 只写
+        const RDWR = 1 << 1;    // 读写
+        const CREATE = 1 << 9;  // 创建。如果文件存在，则截断文件
+        const TRUNC = 1 << 10;  // 截断，即删除文件中原有的内容
+    }
+}
+
+pub fn open(path: &str, flags: OpenFlags) -> isize {
+    sys_open(path, flags.bits)
+}
+
+pub fn close(fd: usize) -> isize {
+    sys_close(fd)
+}
 
 pub fn read(fd: usize, buf: &mut [u8]) -> isize {
     sys_read(fd, buf)
