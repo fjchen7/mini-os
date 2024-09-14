@@ -3,6 +3,8 @@ TARGET := riscv64gc-unknown-none-elf
 MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
+# 打包了应用ELF的文件系统镜像
+FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
 # 编译的模式
 ifeq ($(MODE), release)
 	MODE_ARG := --release
@@ -19,7 +21,7 @@ KERNEL_ENTRY_PA := 0x80200000
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-build: env $(KERNEL_BIN)
+build: env $(KERNEL_BIN) fs-img
 
 env:
 	(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add $(TARGET)
@@ -30,14 +32,27 @@ env:
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
+fs-img: $(APPS)
+	@cd ../user && make build TEST=$(TEST)
+	@rm -f $(FS_IMG)
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/riscv64gc-unknown-none-elf/release/
+
+$(APPS):
+
 kernel:
 	@echo Platform: $(BOARD)
 	@cargo build $(MODE_ARG)
 
+# 参数说明
+# -drive：添加虚拟硬盘，命名为x0，内容为FS_IMG所指文件
+# -device virtio-blk-device：将硬盘x0作为VirtIO总线上的一个块设备，接入到虚拟机中。
+#                            virtio-mmio-bus.0表示VirtIO总线通过MMIO进行控制，且该块设备的编号为0。
 QEMU_ARGS := -machine virt \
 			-nographic \
 			-bios $(BOOTLOADER) \
-			-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+			-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
+			-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+			-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 QEMU_NAME := qemu-system-riscv64
 # 检查Qemu版本
