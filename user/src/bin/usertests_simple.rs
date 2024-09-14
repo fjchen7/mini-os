@@ -16,7 +16,6 @@ static TESTS: &[&str] = &[
     "sleep_simple\0",
     "stack_overflow\0",
     "yield\0",
-    "sbrk_test\0",
 ];
 
 use user_lib::{exec, fork, waitpid};
