@@ -189,6 +189,7 @@ impl PageTable {
 }
 
 // 在给定地址空间中，读出以ptr为起始地址，len为长度的缓冲区中的数据。
+// 返回一个切片数组，每个元素表示从一个物理页中读出的数据。
 pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;

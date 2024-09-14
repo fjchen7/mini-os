@@ -17,11 +17,12 @@ impl File for Stdin {
     }
     fn read(&self, mut user_buf: UserBuffer) -> usize {
         assert_eq!(user_buf.len(), 1);
-        // busy loop
+        // 每次只读取一个字符
         let mut c: usize;
         loop {
             c = console_getchar();
             if c == 0 {
+                // 如果没有字符可读，则挂起当前任务，切换到下一个任务
                 suspend_current_and_run_next();
                 continue;
             } else {

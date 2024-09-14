@@ -112,7 +112,7 @@ impl VirtAddr {
         if self.0 == 0 {
             VirtPageNum(0)
         } else {
-            VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
+            VirtPageNum((self.0 + (PAGE_SIZE - 1)) / PAGE_SIZE)
         }
     }
     pub fn page_offset(&self) -> usize {

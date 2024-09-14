@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 
 use crate::{
+    fs::{open_file, OpenFlags},
     loader::get_app_data_by_name,
     mm::{translated_refmut, translated_str},
     task::{
@@ -101,14 +102,15 @@ pub fn sys_fork() -> isize {
 }
 
 // 将程序加载到当前进程的地址空间，并开始执行。
-// - path：该程序的名字，系统能通过它找到其ELF二进制数据
+// - path：该程序的名字，系统能通过它找到其ELF二进制数据。从根目录找。
 // - 返回值：执行成功则不返回，失败则返回-1。
 pub fn sys_exec(path: *const u8) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(data);
+        task.exec(data.as_slice());
         0 // 这个返回值没有意义，因为在exec方法里，我们已经重新初始化了Trap上下文
     } else {
         -1

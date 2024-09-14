@@ -3,6 +3,7 @@ use crate::mm::UserBuffer;
 mod inode;
 mod stdio;
 
+pub use inode::{open_file, OpenFlags};
 pub use stdio::{Stdin, Stdout};
 
 // 内核的文件抽象
