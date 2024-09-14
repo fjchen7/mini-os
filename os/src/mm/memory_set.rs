@@ -167,6 +167,15 @@ impl MemorySet {
                 MapPermission::R | MapPermission::W, // 物理内存区域不可执行
             ),
         ];
+        for pair in MMIO {
+            sections.push((
+                "memory-mapped I/O",
+                pair.0,
+                pair.0 + pair.1,
+                MapType::Identical,
+                MapPermission::R | MapPermission::W, // MMIO区域不可执行
+            ));
+        }
 
         for (name, start, end, map_type, map_perm) in sections {
             println_kernel!("{:<15} [{:#010x}, {:#010x})", name, start, end);

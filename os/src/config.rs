@@ -32,3 +32,10 @@ pub const MEMORY_END: usize = 0x88_000_000;
 // CPU的时钟频率（Hz），即每秒CPU经过的时钟周期数。
 // 这也是计数器寄存器mtime每秒会增加的数字。
 pub const CLOCK_FREQ: usize = 12500000;
+
+// MMIO可将设备的寄存器映射到内存中，以便CPU就能通过读写内存来控制该设备。
+pub const MMIO: &[(usize, usize)] = &[
+    // (0x0010_0000, 0x00_2000), // VIRT_TEST/RTC  in virt machine
+    // Qemu模拟器中，MMIO的地址从0x1000_0000开始，大小为4KB
+    (0x1000_1000, 0x00_1000), // Virtio Block in virt machine
+];
