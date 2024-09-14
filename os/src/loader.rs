@@ -55,11 +55,6 @@ lazy_static! {
     };
 }
 
-// 根据应用程序的名字，获取其ELF二进制数据
-pub fn get_app_data_by_name(name: &str) -> Option<&'static [u8]> {
-    APP_NAMES.iter().position(|&x| x == name).map(get_app_data)
-}
-
 // 打印所有应用程序的名字
 pub fn list_apps() {
     println!("/**** APPS ****");
