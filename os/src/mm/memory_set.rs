@@ -6,7 +6,7 @@ use super::{
     page_table::{PTEFlags, PageTable, PageTableEntry},
 };
 use crate::{
-    config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
+    config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
     mm::address::StepByOne,
     sync::UPSafeCell,
 };
@@ -19,6 +19,11 @@ lazy_static! {
     // 用于管理内核地址空间的MemorySet实例
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+}
+
+// 获取内核地址空间的根页表的token
+pub fn kernel_token() -> usize {
+    KERNEL_SPACE.exclusive_access().token()
 }
 
 // 表示内核或应用程序的地址空间。
@@ -130,7 +135,7 @@ impl MemorySet {
         // 映射跳板
         memory_set.map_trampoline();
         println_kernel!("Mapping Kernel Memory...");
-        let sections = vec![
+        let mut sections = vec![
             (
                 ".text",
                 stext as usize,

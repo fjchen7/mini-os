@@ -9,9 +9,15 @@ mod heap_allocator;
 mod memory_set;
 mod page_table;
 
-pub use address::{PhysPageNum, VirtAddr};
-pub use memory_set::{MapPermission, MemorySet, KERNEL_SPACE};
-pub use page_table::{translated_byte_buffer, translated_refmut, translated_str};
+pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
+pub use memory_set::remap_test;
+pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
+use page_table::PTEFlags;
+pub use page_table::{
+    translated_byte_buffer, translated_refmut, translated_str, PageTable, PageTableEntry,
+    UserBuffer,
+};
 
 // 初始化内存管理模块
 pub fn init() {
