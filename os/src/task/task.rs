@@ -6,12 +6,14 @@ use super::{
 };
 use crate::{
     config::TRAP_CONTEXT,
+    fs::{File, Stdin, Stdout},
     mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE},
     sync::UPSafeCell,
     trap::{trap_handler, TrapContext},
 };
 use alloc::{
     sync::{Arc, Weak},
+    vec,
     vec::Vec,
 };
 
@@ -43,6 +45,9 @@ pub struct TaskControlBlockInner {
     pub children: Vec<Arc<TaskControlBlock>>,
     // 进程退出时，返回的退出码保存在这里
     pub exit_code: i32,
+    // 文件描述符表
+    // 元素所在的下标就是文件描述符。如果元素为None，则表示该文件描述符未被使用，可以重新被分配。
+    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
 
     // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
     pub heap_bottom: usize,
@@ -112,6 +117,14 @@ impl TaskControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
+                    fd_table: vec![
+                        // 0 -> stdin
+                        Some(Arc::new(Stdin)),
+                        // 1 -> stdout
+                        Some(Arc::new(Stdout)),
+                        // 2 -> stderr
+                        Some(Arc::new(Stdout)),
+                    ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                 })
@@ -142,6 +155,15 @@ impl TaskControlBlock {
         let pid_handle = pid_alloc();
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.get_top();
+        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        for fd in parent_inner.fd_table.iter() {
+            if let Some(file) = fd {
+                new_fd_table.push(Some(file.clone()));
+            } else {
+                new_fd_table.push(None);
+            }
+        }
+
         let user_sp = parent_inner.base_size;
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
@@ -156,6 +178,7 @@ impl TaskControlBlock {
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
+                    fd_table: new_fd_table,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                 })
