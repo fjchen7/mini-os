@@ -112,7 +112,8 @@ impl VirtAddr {
         if self.0 == 0 {
             VirtPageNum(0)
         } else {
-            VirtPageNum((self.0 + (PAGE_SIZE - 1)) / PAGE_SIZE)
+            let page_num = self.0.div_ceil(PAGE_SIZE);
+            VirtPageNum(page_num)
         }
     }
     pub fn page_offset(&self) -> usize {
@@ -144,7 +145,8 @@ impl PhysAddr {
         if self.0 == 0 {
             PhysPageNum(0)
         } else {
-            PhysPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
+            let page_num = self.0.div_ceil(PAGE_SIZE);
+            PhysPageNum(page_num)
         }
     }
     pub fn page_offset(&self) -> usize {

@@ -97,6 +97,17 @@ impl TaskControlBlock {
         self.pid.0
     }
 
+    fn init_fd_table() -> Vec<Option<Arc<dyn File + Send + Sync>>> {
+        vec![
+            // 0 -> stdin
+            Some(Arc::new(Stdin)),
+            // 1 -> stdout
+            Some(Arc::new(Stdout)),
+            // 2 -> stderr
+            Some(Arc::new(Stdout)),
+        ]
+    }
+
     // 解析ELF格式的二进制数据，创建一个新的进程
     pub fn new(elf_data: &[u8]) -> Self {
         // 解析ELF，得到地址空间、用户栈顶、入口地址
@@ -126,14 +137,7 @@ impl TaskControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
-                    fd_table: vec![
-                        // 0 -> stdin
-                        Some(Arc::new(Stdin)),
-                        // 1 -> stdout
-                        Some(Arc::new(Stdout)),
-                        // 2 -> stderr
-                        Some(Arc::new(Stdout)),
-                    ],
+                    fd_table: Self::init_fd_table(),
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                 })
@@ -154,49 +158,41 @@ impl TaskControlBlock {
     // 从父进程复制出一个子进程
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
         let mut parent_inner = self.inner_exclusive_access();
+        // 为子进程分配新的地址空间
         let memory_set = MemorySet::from_existed_user(&parent_inner.memory_set);
-        // 下面与new方法基本相同
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-        // alloc a pid and a kernel stack in kernel space
+        // 为子进程分配新的PID和内核栈
         let pid_handle = pid_alloc();
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.get_top();
-        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
-        for fd in parent_inner.fd_table.iter() {
-            if let Some(file) = fd {
-                new_fd_table.push(Some(file.clone()));
-            } else {
-                new_fd_table.push(None);
-            }
-        }
-
-        let user_sp = parent_inner.base_size;
+        // 复制父进程的fd
+        let fd_table = parent_inner.fd_table.clone();
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     trap_cx_ppn,
-                    base_size: user_sp,
+                    base_size: parent_inner.base_size,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
-                    fd_table: new_fd_table,
-                    heap_bottom: user_sp,
-                    program_brk: user_sp,
+                    fd_table,
+                    heap_bottom: parent_inner.heap_bottom,
+                    program_brk: parent_inner.program_brk,
                 })
             },
         });
-        // 更新父进程的children
-        parent_inner.children.push(task_control_block.clone());
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
         trap_cx.kernel_sp = kernel_stack_top;
+        // 更新父进程的children
+        parent_inner.children.push(task_control_block.clone());
         task_control_block
     }
 
@@ -216,6 +212,7 @@ impl TaskControlBlock {
         inner.base_size = user_sp;
         inner.heap_bottom = user_sp;
         inner.program_brk = user_sp;
+        inner.fd_table = Self::init_fd_table();
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
             entry_point,

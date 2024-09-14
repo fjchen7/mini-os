@@ -3,7 +3,6 @@
 use alloc::vec::Vec;
 use alloc::{string::String, vec};
 use bitflags::*;
-use core::cmp::min;
 
 use super::address::PhysAddr;
 use super::{
@@ -192,21 +191,22 @@ impl PageTable {
 // 返回一个切片数组，每个元素表示从一个物理页中读出的数据。
 pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
-    let mut start = ptr as usize;
-    let end = start + len;
+    let mut start_va = VirtAddr::from(ptr as usize);
+    let end = ptr as usize + len;
     let mut v = Vec::new();
-    while start < end {
-        let start_va = VirtAddr::from(start);
+    loop {
         let mut vpn = start_va.floor();
         let ppn = page_table.translate(vpn).unwrap().ppn();
         vpn.step();
-        let end_va = min(VirtAddr::from(vpn), VirtAddr::from(end));
-        if end_va.page_offset() == 0 {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
-        } else {
+        // 如果end在当前页里，则此次处理后就结束
+        if VirtAddr::from(end) < VirtAddr::from(vpn) {
+            let end_va = VirtAddr::from(end);
             v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+            break;
+        } else {
+            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+            start_va = vpn.into();
         }
-        start = end_va.into();
     }
     v
 }

@@ -36,8 +36,10 @@ impl EasyFileSystem {
         // 该inode位图最多能表示的inode编号
         let inode_num = inode_bitmap.maximum();
         // 存放这么多inode结构需要的块数，要向上取整
-        let inode_area_blocks =
-            ((inode_num * core::mem::size_of::<DiskInode>() + BLOCK_SZ - 1) / BLOCK_SZ) as u32;
+        let inode_area_blocks = {
+            let bytes = inode_num * core::mem::size_of::<DiskInode>();
+            bytes.div_ceil(BLOCK_SZ) as u32
+        };
         // 存放inode位图和inode数据类型的块的总数
         let inode_total_blocks = inode_bitmap_blocks + inode_area_blocks;
         // 存放数据位图和数据的块数。-1是为了留出超级块的位置。

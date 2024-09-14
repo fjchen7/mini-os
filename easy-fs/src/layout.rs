@@ -5,7 +5,10 @@ use crate::{block_cache::get_block_cache, block_dev::BlockDevice};
 use super::BLOCK_SZ;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt::{Debug, Formatter, Result};
+use core::{
+    cmp::min,
+    fmt::{Debug, Formatter, Result},
+};
 
 // 检查文件系统是否有效的魔数
 const EFS_MAGIC: u32 = 0x3b800001;
@@ -135,23 +138,23 @@ impl DiskInode {
     }
 
     fn _data_blocks(size: u32) -> u32 {
-        (size + BLOCK_SZ as u32 - 1) / BLOCK_SZ as u32
+        size.div_ceil(BLOCK_SZ as u32)
     }
 
-    // 返回存放数据和inode的一级/二级间接索引所需的块数量
+    // 返回存放数据及其inode的一级/二级间接索引所需的块数量
     pub fn total_blocks(size: u32) -> u32 {
         let data_blocks = Self::_data_blocks(size) as usize;
-        let mut total = data_blocks as usize;
+        let mut total = data_blocks;
         // 一级间接索引
         if data_blocks > DIRECT_BOUND {
             total += 1;
         }
         // 二级间接索引
         if data_blocks > INDIRECT1_BOUND {
-            total += 1; // 存放二级间接索引的块
-                        // 向上取整
-            total += ((data_blocks - INDIRECT1_BOUND) + INODE_INDIRECT1_COUNT - 1)
-                / INODE_INDIRECT1_COUNT;
+            // 存放二级间接索引的块
+            total += 1;
+            // 向上取整
+            total += (data_blocks - INDIRECT1_BOUND).div_ceil(INODE_INDIRECT1_COUNT);
         }
         total as u32
     }
@@ -201,11 +204,11 @@ impl DiskInode {
         let mut total_blocks = self.data_blocks();
         let mut new_blocks = new_blocks.into_iter();
         // 分配给直接索引，并更新直接索引数组
-        while current_blocks < total_blocks.min(INODE_DIRECT_COUNT as u32) {
+        while current_blocks < min(total_blocks, INODE_DIRECT_COUNT as u32) {
             self.direct[current_blocks as usize] = new_blocks.next().unwrap();
             current_blocks += 1;
         }
-        // 如果不够，分配给一级索引
+        // 如果不够，分配一级索引
         if total_blocks > INODE_DIRECT_COUNT as u32 {
             if current_blocks == INODE_DIRECT_COUNT as u32 {
                 self.indirect1 = new_blocks.next().unwrap();
@@ -219,12 +222,12 @@ impl DiskInode {
         get_block_cache(self.indirect1 as usize, Arc::clone(block_device))
             .lock()
             .modify(0, |indirect1: &mut IndirectBlock| {
-                while current_blocks < total_blocks.min(INODE_INDIRECT1_COUNT as u32) {
+                while current_blocks < min(total_blocks, INODE_INDIRECT1_COUNT as u32) {
                     indirect1[current_blocks as usize] = new_blocks.next().unwrap();
                     current_blocks += 1;
                 }
             });
-        // 如果还不够，分配给二级索引
+        // 如果还不够，分配二级索引
         if total_blocks > INODE_INDIRECT1_COUNT as u32 {
             if current_blocks == INODE_INDIRECT1_COUNT as u32 {
                 self.indirect2 = new_blocks.next().unwrap();
@@ -274,7 +277,7 @@ impl DiskInode {
         self.size = 0;
         let mut current_blocks = 0usize;
         // direct
-        while current_blocks < data_blocks.min(INODE_DIRECT_COUNT) {
+        while current_blocks < min(data_blocks, INODE_DIRECT_COUNT) {
             v.push(self.direct[current_blocks]);
             self.direct[current_blocks] = 0;
             current_blocks += 1;
@@ -291,7 +294,7 @@ impl DiskInode {
         get_block_cache(self.indirect1 as usize, Arc::clone(block_device))
             .lock()
             .modify(0, |indirect1: &mut IndirectBlock| {
-                while current_blocks < data_blocks.min(INODE_INDIRECT1_COUNT) {
+                while current_blocks < min(data_blocks, INODE_INDIRECT1_COUNT) {
                     v.push(indirect1[current_blocks]);
                     //indirect1[current_blocks] = 0;
                     current_blocks += 1;
@@ -348,16 +351,16 @@ impl DiskInode {
         block_device: &Arc<dyn BlockDevice>,
     ) -> usize {
         let mut start = offset;
-        let end = (offset + buf.len()).min(self.size as usize);
+        let end = min(offset + buf.len(), self.size as usize);
         if start >= end {
             return 0;
         }
         let mut start_block = start / BLOCK_SZ;
         let mut read_size = 0usize;
         loop {
-            // 当前块的结束位置（字节偏移量）
+            // 当前块的结束位置（结束位置的字节偏移量）
             let mut end_current_block = (start / BLOCK_SZ + 1) * BLOCK_SZ;
-            end_current_block = end_current_block.min(end);
+            end_current_block = min(end_current_block, end);
             // 读取的字节数
             let block_read_size = end_current_block - start;
             let dst = &mut buf[read_size..read_size + block_read_size];
@@ -386,14 +389,14 @@ impl DiskInode {
         block_device: &Arc<dyn BlockDevice>,
     ) -> usize {
         let mut start = offset;
-        let end = (offset + buf.len()).min(self.size as usize);
+        let end = min(offset + buf.len(), self.size as usize);
         assert!(start <= end);
         let mut start_block = start / BLOCK_SZ;
         let mut write_size = 0usize;
         loop {
-            // 当前块的结束位置（字节偏移量）
+            // 当前块的结束位置的字节偏移量
             let mut end_current_block = (start / BLOCK_SZ + 1) * BLOCK_SZ;
-            end_current_block = end_current_block.min(end);
+            end_current_block = min(end_current_block, end);
             // 写入的字节数
             let block_write_size = end_current_block - start;
             let block_id = self.get_block_id(start_block as u32, block_device) as usize;

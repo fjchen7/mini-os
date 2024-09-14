@@ -13,7 +13,8 @@ use crate::{
     layout::{DirEntry, DiskInode, DiskInodeType, DIRENT_SZ},
 };
 
-// DiskInode 放在磁盘块中比较固定的位置，而 Inode 是放在内存中的记录文件索引节点信息的数据结构
+// DiskInode 放在磁盘存放的inode，而Inode内存存放的inode
+// 每个Inode会指向某个DiskInode
 pub struct Inode {
     block_id: usize,
     block_offset: usize,
@@ -52,7 +53,6 @@ impl Inode {
 
     // 在类型为目录的inode中，查找名为name的inode
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
-        // assert it is a directory
         assert!(disk_inode.is_dir());
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
         let mut dirent = DirEntry::empty();
@@ -62,7 +62,7 @@ impl Inode {
                 DIRENT_SZ,
             );
             if dirent.name() == name {
-                return Some(dirent.inode_number() as u32);
+                return Some(dirent.inode_number());
             }
         }
         None
@@ -139,9 +139,8 @@ impl Inode {
             );
         });
 
-        // TODO：对调？
-        let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
         block_cache_sync_all();
+        let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
         // return inode
         Some(Arc::new(Self::new(
             block_id,
@@ -149,7 +148,6 @@ impl Inode {
             self.fs.clone(),
             self.block_device.clone(),
         )))
-        // release efs lock automatically by compiler
     }
 
     // 若当前inode是目录，则返回目录下的所有文件名；

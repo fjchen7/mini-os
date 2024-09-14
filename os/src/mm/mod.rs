@@ -9,14 +9,11 @@ mod heap_allocator;
 mod memory_set;
 mod page_table;
 
-pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
-pub use memory_set::remap_test;
 pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
-use page_table::PTEFlags;
 pub use page_table::{
-    translated_byte_buffer, translated_refmut, translated_str, PageTable, PageTableEntry,
-    UserBuffer,
+    translated_byte_buffer, translated_refmut, translated_str, PageTable, UserBuffer,
 };
 
 // 初始化内存管理模块
