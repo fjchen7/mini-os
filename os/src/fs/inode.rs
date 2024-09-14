@@ -8,9 +8,9 @@
 //! 将文件系统的inode包装成内核的inode，即OSInode。该类型供进程使用，表示一个被打开的文件。
 
 use super::File;
-use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
+use crate::{drivers::BLOCK_DEVICE, mm::MapPermission};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -53,6 +53,22 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
         }
         v
+    }
+
+    pub fn clone_inner_inode(&self) -> Arc<Inode> {
+        self.inner.exclusive_access().inode.clone()
+    }
+
+    pub fn map_permission(&self) -> MapPermission {
+        if self.readable && self.writable {
+            MapPermission::R | MapPermission::W
+        } else if self.readable {
+            MapPermission::R
+        } else if self.writable {
+            MapPermission::W
+        } else {
+            MapPermission::empty()
+        }
     }
 }
 

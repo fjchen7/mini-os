@@ -1,15 +1,20 @@
 mod context;
 
 use crate::{
-    config::{TRAMPOLINE, TRAP_CONTEXT},
+    config::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT},
+    mm::VirtAddr,
     syscall::syscall,
     task::{
-        current_task_pid, current_trap_cx, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        current_task, current_task_pid, current_trap_cx, current_user_token,
+        exit_current_and_run_next, suspend_current_and_run_next,
     },
     timer::set_next_trigger,
 };
-use core::arch::{asm, global_asm};
+use alloc::sync::Arc;
+use core::{
+    arch::{asm, global_asm},
+    cmp::min,
+};
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Interrupt, Trap},
@@ -87,14 +92,16 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::InstructionPageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            println_kernel!(
+            if !handle_page_fault(stval) {
+                println_kernel!(
                 "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
                 scause.cause(),
                 current_task_pid(),
                 stval,
                 current_trap_cx().sepc,
             );
-            exit_current_and_run_next(-2);
+                exit_current_and_run_next(-2);
+            }
         }
         // 非法指令
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -142,6 +149,45 @@ pub fn trap_return() -> ! {
             in("a1") user_satp,        // a1 = 程序地址空间的根页表地址
             options(noreturn)
         );
+    }
+}
+
+// 延迟加载mmap的文件映射到内存。将加载fault_addr所在的整个页。
+pub fn handle_page_fault(fault_addr: usize) -> bool {
+    let fault_va: VirtAddr = fault_addr.into();
+    let fault_vpn = fault_va.floor();
+    let task = current_task().unwrap();
+    let mut tcb = task.inner_exclusive_access();
+
+    // 如果页表中已经有映射，那么不能处理
+    if let Some(pte) = tcb.memory_set.translate(fault_vpn) {
+        if pte.is_valid() {
+            return false;
+        }
+    }
+
+    match tcb.file_mappings.iter_mut().find(|m| m.contains(fault_va)) {
+        Some(mapping) => {
+            let file = Arc::clone(&mapping.file);
+            // 延迟加载，访问时才分配物理页。且如果之前已经映射过，那么不会再次分配物理页，共享之前的物理页。
+            let (ppn, range, shared) = mapping.map(fault_va).unwrap();
+            // 更新页表
+            tcb.memory_set.map(fault_vpn, ppn, range.perm);
+            // 如果不是共享的（分配了新的物理页），则从文件中读取数据
+            // 这是mmap的功能，即映射文件内容到内存
+            if !shared {
+                // 如果先前mmap映射了[0, 100)的虚拟地址到文件的[100, 200)的内容
+                // 此时访问虚拟地址为50的内容，那就会加载[50, 100)的内容到物理页（假设页大小超过50）
+                let file_size = file.size() as usize;
+                let file_offset = range.file_offset(fault_vpn);
+                assert!(file_offset < file_size);
+                // 加载内容不超过一个页
+                let read_len = min(PAGE_SIZE, file_size - file_offset);
+                file.read_at(file_offset, &mut ppn.get_bytes_array()[..read_len]);
+            }
+            true
+        }
+        None => false,
     }
 }
 

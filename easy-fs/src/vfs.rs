@@ -14,7 +14,7 @@ use crate::{
 };
 
 // DiskInode 放在磁盘存放的inode，而Inode内存存放的inode
-// 每个Inode会指向某个DiskInode
+// 每个Inode会指向某个DiskInode。该类型只用于常规文件和目录，不用于特殊文件（如socket）
 pub struct Inode {
     block_id: usize,
     block_offset: usize,
@@ -35,6 +35,11 @@ impl Inode {
             fs,
             block_device,
         }
+    }
+
+    pub fn size(&self) -> u32 {
+        let _fs = self.fs.lock();
+        self.read_disk_inode(|disk_inode| disk_inode.size)
     }
 
     // 读取磁盘中的inode

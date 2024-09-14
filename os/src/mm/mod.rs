@@ -4,12 +4,14 @@
 //! 每个任务或进程都有一个内存集合，用于管理其虚拟内存。
 
 mod address;
+mod file_mapping;
 mod frame_allocator;
 mod heap_allocator;
 mod memory_set;
 mod page_table;
 
 pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr};
+pub use file_mapping::{FileMapping, VirtualAddressAllocator};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 pub use memory_set::{kernel_token, MapPermission, MemorySet, KERNEL_SPACE};
 pub use page_table::{

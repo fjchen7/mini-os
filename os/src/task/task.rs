@@ -7,7 +7,7 @@ use super::{
 use crate::{
     config::TRAP_CONTEXT,
     fs::{File, Stdin, Stdout},
-    mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE},
+    mm::{FileMapping, MemorySet, PhysPageNum, VirtAddr, VirtualAddressAllocator, KERNEL_SPACE},
     sync::UPSafeCell,
     trap::{trap_handler, TrapContext},
 };
@@ -16,6 +16,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use easy_fs::Inode;
 
 // 单个进程的控制块
 // 进程的执行状态、资源控制等元数据，都保存在该结构体中。
@@ -54,6 +55,9 @@ pub struct TaskControlBlockInner {
     // 堆的顶部，即堆的结束地址。数字大。
     // 这个指针的名字就叫program break。
     pub program_brk: usize,
+    // mmap
+    pub mmap_va_allocator: VirtualAddressAllocator,
+    pub file_mappings: Vec<FileMapping>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -85,6 +89,12 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+
+    pub fn find_file_mapping_mut(&mut self, file: &Arc<Inode>) -> Option<&mut FileMapping> {
+        self.file_mappings
+            .iter_mut()
+            .find(|m| Arc::ptr_eq(&m.file, file))
     }
 }
 
@@ -140,6 +150,8 @@ impl TaskControlBlock {
                     fd_table: Self::init_fd_table(),
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    mmap_va_allocator: VirtualAddressAllocator::default(),
+                    file_mappings: vec![],
                 })
             },
         };
@@ -174,7 +186,7 @@ impl TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
             inner: unsafe {
-                UPSafeCell::new(TaskControlBlockInner {
+                let value = TaskControlBlockInner {
                     trap_cx_ppn,
                     base_size: parent_inner.base_size,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
@@ -186,7 +198,10 @@ impl TaskControlBlock {
                     fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
-                })
+                    mmap_va_allocator: VirtualAddressAllocator::default(),
+                    file_mappings: vec![],
+                };
+                UPSafeCell::new(value)
             },
         });
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
@@ -213,6 +228,8 @@ impl TaskControlBlock {
         inner.heap_bottom = user_sp;
         inner.program_brk = user_sp;
         inner.fd_table = Self::init_fd_table();
+        inner.mmap_va_allocator = VirtualAddressAllocator::default();
+        inner.file_mappings = vec![];
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
             entry_point,

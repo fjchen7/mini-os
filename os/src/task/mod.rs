@@ -75,6 +75,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 回收分配给该进程的物理页。
     // 这是子进程成为僵尸进程后，先回收的部分资源。剩余未回收的资源，由父进程或initproc进程回收。
     inner.memory_set.recycle_data_pages();
+    // write back dirty pages
+    for mapping in inner.file_mappings.iter() {
+        mapping.sync();
+    }
     drop(inner);
     drop(task);
 

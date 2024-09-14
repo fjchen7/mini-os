@@ -380,6 +380,11 @@ impl MemorySet {
     pub fn recycle_data_pages(&mut self) {
         self.areas.clear();
     }
+
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, map_perm: MapPermission) {
+        self.page_table
+            .map(vpn, ppn, PTEFlags::from_bits(map_perm.bits).unwrap());
+    }
 }
 
 impl MapArea {
