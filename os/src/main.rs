@@ -11,8 +11,9 @@
 #[macro_use]
 mod console;
 mod config;
+mod drivers;
+pub mod fs;
 mod lang_items;
-mod loader;
 mod logging;
 mod mm;
 mod sbi;
@@ -47,7 +48,7 @@ pub fn rust_main() -> ! {
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    loader::list_apps();
+    fs::list_apps();
     task::run_tasks();
     unreachable!("Never reach end of rust_main");
 }
