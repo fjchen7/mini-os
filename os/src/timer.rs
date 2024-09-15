@@ -24,6 +24,7 @@ pub fn get_time_ms() -> usize {
 }
 
 // 返回时间（微秒）
+#[allow(unused)]
 pub fn get_time_us() -> usize {
     time::read() / (CLOCK_FREQ / USEC_PER_SEC)
 }

@@ -1,4 +1,4 @@
-use crate::config::{kernel_stack_position, KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE};
+use crate::config::kernel_stack_position;
 use crate::mm::{MapPermission, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use alloc::vec::Vec;

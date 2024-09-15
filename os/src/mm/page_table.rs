@@ -94,8 +94,8 @@ impl PageTable {
         }
     }
 
-    // 模拟MMU从satp寄存器中创建页表
-    // 这里的变量表示CSR寄存器satp的值，其最低位的44位表示根页表的物理页号
+    // 根据satp寄存器的值，创建页表
+    // CSR寄存器satp的值其最低位44位表示根页表的物理页号
     pub fn from_token(satp: usize) -> Self {
         Self {
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
@@ -162,7 +162,7 @@ impl PageTable {
     }
 
     // 将虚拟页号映射到物理页号
-    // 这里采用恒等映射，即虚拟页号等于物理页号
+    // 页表是存储在内核的地址空间中的，因此采用恒等映射，即存放页表的虚拟页号等于物理页号
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
         // 如果找到的页表项是合法的，则表示之前已经映射过了，报错。

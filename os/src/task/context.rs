@@ -1,6 +1,6 @@
 use crate::trap::trap_return;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 // 程序陷入Trap后，要记录一些上下文，才能在Trap处理完后，回到该程序，继续执行。
 // 这类似函数的栈帧，都表示在做了某次调用后，回到原地方的所需信息。

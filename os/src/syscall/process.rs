@@ -5,14 +5,14 @@ use crate::{
     mm::{translated_refmut, translated_str},
     task::{
         add_task, current_task, current_task_pid, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, take_current_task,
+        suspend_current_and_run_next,
     },
     timer::get_time_ms,
 };
 
 // 退出程序
 pub fn sys_exit(exit_code: i32) -> ! {
-    let pid = current_task().unwrap().pid.0;
+    let pid = current_task_pid();
     println_kernel!("PID {} exited with code {}", pid, exit_code);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");

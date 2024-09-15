@@ -11,15 +11,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use core::ops::AddAssign;
-
-use crate::loader::{get_app_data, get_app_data_by_name, get_num_app};
+use crate::loader::get_app_data_by_name;
 use crate::sbi::shutdown;
-use crate::sync::UPSafeCell;
-use crate::timer::get_time_us;
-use crate::trap::TrapContext;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use lazy_static::*;
 pub use manager::add_task;
 pub use pid::pid_alloc;
@@ -27,7 +21,7 @@ pub use processor::{
     current_task, current_task_pid, current_trap_cx, current_user_token, run_tasks, schedule,
     take_current_task,
 };
-use task::{TaskControlBlock, TaskControlBlockInner, TaskStatus};
+use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
@@ -44,7 +38,7 @@ pub fn suspend_current_and_run_next() {
 
     // 将任务重新加入到任务管理器中
     add_task(task);
-    // 进入调度逻辑。？？？？？？？？？
+    // 进入调度逻辑
     schedule(task_cx_ptr);
 }
 
