@@ -1,9 +1,11 @@
 use crate::mm::UserBuffer;
 
 mod inode;
+mod pipe;
 mod stdio;
 
 pub use inode::{list_apps, open_file, OSInode, OpenFlags, ROOT_INODE};
+pub use pipe::make_pipe;
 pub use stdio::{Stdin, Stdout};
 
 // 内核的文件抽象

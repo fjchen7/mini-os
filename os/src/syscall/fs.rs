@@ -2,8 +2,10 @@
 use core::any::Any;
 
 use crate::config::PAGE_SIZE;
-use crate::fs::{open_file, OSInode, OpenFlags};
-use crate::mm::{translated_byte_buffer, translated_str, FileMapping, UserBuffer};
+use crate::fs::{make_pipe, open_file, OSInode, OpenFlags};
+use crate::mm::{
+    translated_byte_buffer, translated_refmut, translated_str, FileMapping, UserBuffer,
+};
 use crate::task::{current_task, current_user_token};
 
 // 将buf中长度为len的字节，写入到文件fd中
@@ -127,4 +129,21 @@ pub fn sys_mmap(fd: usize, len: usize, offset: usize) -> isize {
         tcb.file_mappings.push(m);
     }
     start.0 as isize
+}
+
+// 为当前进程创建一个管道。
+// - pipe：应用地址空间中，长度为 2 的 usize 数组的起始地址。该方法需要将所创建的读和写管道的文件描述符，写入到该数组中。
+// - 返回值：0成功，-1错误（如传入的地址不合法）。
+pub fn sys_pipe(pipe: *mut usize) -> isize {
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let mut inner = task.inner_exclusive_access();
+    let (pipe_read, pipe_write) = make_pipe();
+    let read_fd = inner.alloc_fd();
+    inner.fd_table[read_fd] = Some(pipe_read);
+    let write_fd = inner.alloc_fd();
+    inner.fd_table[write_fd] = Some(pipe_write);
+    *translated_refmut(token, pipe) = read_fd;
+    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
+    0
 }
