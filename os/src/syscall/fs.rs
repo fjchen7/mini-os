@@ -1,4 +1,5 @@
 //! 文件系统相关的系统调用
+use alloc::sync::Arc;
 use core::any::Any;
 
 use crate::config::PAGE_SIZE;
@@ -146,4 +147,22 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
     *translated_refmut(token, pipe) = read_fd;
     *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
     0
+}
+
+// 将当前进程的已打开的文件，复制并分配到一个新的文件描述符中。
+// 实质是分配一个新的文件描述符，指向同一个文件对象。
+// - fd：进程的已经打开文件的描述符。
+// - 返回值：成功则返回新的文件描述符，失败则返回 -1（比如传入的 fd 不合法）。
+pub fn sys_dup(fd: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }
+    let new_fd = inner.alloc_fd();
+    inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
+    new_fd as isize
 }
