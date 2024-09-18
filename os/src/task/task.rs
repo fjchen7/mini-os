@@ -7,11 +7,15 @@ use super::{
 use crate::{
     config::TRAP_CONTEXT,
     fs::{File, Stdin, Stdout},
-    mm::{FileMapping, MemorySet, PhysPageNum, VirtAddr, VirtualAddressAllocator, KERNEL_SPACE},
+    mm::{
+        translated_refmut, FileMapping, MemorySet, PhysPageNum, VirtAddr, VirtualAddressAllocator,
+        KERNEL_SPACE,
+    },
     sync::UPSafeCell,
     trap::{trap_handler, TrapContext},
 };
 use alloc::{
+    string::String,
     sync::{Arc, Weak},
     vec,
     vec::Vec,
@@ -211,33 +215,69 @@ impl TaskControlBlock {
         task_control_block
     }
 
-    // 申请新的地址空间，加载ELF文件，将替换原来的地址空间。同时初始化TrapContext。
-    pub fn exec(&self, elf_data: &[u8]) {
+    // 申请新的地址空间，加载ELF文件。这将替换原来的地址空间，同时初始化TrapContext。
+    // 在操作系统上执行程序，都会fork父进程，然后再调用这个方法。
+    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
         // 申请新的地址空间，加载ELF文件
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, mut user_sp, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
+        let base_size = user_sp;
+
+        // 将参数压入用户栈
+        let size_of_ptr = core::mem::size_of::<usize>();
+        let token = memory_set.token();
+        let args_len = args.len();
+        // 先压入指向参数的指针
+        user_sp -= (args_len + 1) * size_of_ptr;
+        let argv_base = user_sp;
+        let mut argv: Vec<_> = (0..=args_len)
+            .map(|i| translated_refmut(token, (argv_base + i * size_of_ptr) as *mut usize))
+            .collect();
+        // 多出来的一个指针，指向NULL，表示数组结束
+        *argv[args_len] = 0;
+        // 再压入参数的字符串值
+        for i in 0..args_len {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            // 从栈的低位往高位存放字符串
+            for c in args[i].as_bytes() {
+                *translated_refmut(token, p as *mut u8) = *c;
+                p += 1;
+            }
+            // 字符串要以\0结尾。该字节位于栈的高位。
+            *translated_refmut(token, p as *mut u8) = 0;
+        }
+        // 对齐到指针大小
+        user_sp -= user_sp % size_of_ptr;
 
         let mut inner = self.inner_exclusive_access();
         // 将该进程块的内存空间替换为新的内存空间
         inner.memory_set = memory_set;
         inner.trap_cx_ppn = trap_cx_ppn;
-        inner.base_size = user_sp;
-        inner.heap_bottom = user_sp;
+        inner.base_size = base_size;
+        inner.heap_bottom = user_sp; // TODO: fix new heap bottom
         inner.program_brk = user_sp;
-        inner.fd_table = Self::init_fd_table();
         inner.mmap_va_allocator = VirtualAddressAllocator::default();
         inner.file_mappings = vec![];
-        let trap_cx = inner.get_trap_cx();
-        *trap_cx = TrapContext::app_init_context(
+        let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
             KERNEL_SPACE.exclusive_access().token(),
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        // 进入方法时，寄存器a0(x[10])和a1(x[11])会分别作为方法的第1个和第2个参数传入
+        // 这里对应的，就是main(int argc, char *argv[])中的两个参数
+        // （在我们的用户程序里，入口函数是_start，它包了一层main）
+        //
+        // 实际上这里x[10]的赋值没有意义，因为在trap_handler里，执行系统调用后，会把其返回值（sys_exec的返回值就是argc）赋给x[10]
+        trap_cx.x[10] = args.len(); // argc
+        trap_cx.x[11] = argv_base; // argv
+        *inner.get_trap_cx() = trap_cx;
     }
 
     // 增加或减少堆的大小

@@ -1,14 +1,13 @@
-use alloc::sync::Arc;
-
 use crate::{
     fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
+    mm::{translated_ref, translated_refmut, translated_str},
     task::{
         add_task, current_task, current_task_pid, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
     timer::get_time_ms,
 };
+use alloc::{string::String, sync::Arc, vec::Vec};
 
 // 退出程序
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -102,15 +101,29 @@ pub fn sys_fork() -> isize {
 
 // 将程序加载到当前进程的地址空间，并开始执行。
 // - path：该程序的名字，系统能通过它找到其ELF二进制数据。从根目录找。
+// - args：参数列表。类型为字符串数组，每个元素是一个字符串的起始地址。
 // - 返回值：执行成功则不返回，失败则返回-1。
-pub fn sys_exec(path: *const u8) -> isize {
+pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let token = current_user_token();
     let path = translated_str(token, path);
+    let mut args_vec: Vec<String> = Vec::new();
+    loop {
+        let arg_str_ptr = *translated_ref(token, args);
+        if arg_str_ptr == 0 {
+            break;
+        }
+        let arg_str = translated_str(token, arg_str_ptr as *const u8);
+        args_vec.push(arg_str);
+        unsafe {
+            args = args.add(1);
+        }
+    }
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(data.as_slice());
-        0 // 这个返回值没有意义，因为在exec方法里，我们已经重新初始化了Trap上下文
+        let argc = args_vec.len();
+        task.exec(data.as_slice(), args_vec);
+        argc as isize // 这个返回值没有意义，因为在exec方法里，已经重新初始化了Trap上下文
     } else {
         -1
     }
