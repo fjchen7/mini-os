@@ -1,16 +1,24 @@
+use crate::SignalAction;
+
 // 系统调用号
+const SYSCALL_DUP: usize = 24;
+const SYSCALL_OPEN: usize = 56;
+const SYSCALL_CLOSE: usize = 57;
+const SYSCALL_PIPE: usize = 59;
 const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
 const SYSCALL_YIELD: usize = 124;
+const SYSCALL_KILL: usize = 129;
+const SYSCALL_SIGACTION: usize = 134;
+const SYSCALL_SIGPROCMASK: usize = 135;
+const SYSCALL_SIGRETURN: usize = 139;
 const SYSCALL_GET_TIME: usize = 169;
 const SYSCALL_SBRK: usize = 214;
 const SYSCALL_GETPID: usize = 172;
 const SYSCALL_FORK: usize = 220;
 const SYSCALL_EXEC: usize = 221;
 const SYSCALL_WAITPID: usize = 260;
-const SYSCALL_OPEN: usize = 56;
-const SYSCALL_CLOSE: usize = 57;
 
 pub fn sys_open(path: &str, flags: u32) -> isize {
     syscall(SYSCALL_OPEN, [path.as_ptr() as usize, flags as usize, 0])
@@ -18,6 +26,20 @@ pub fn sys_open(path: &str, flags: u32) -> isize {
 
 pub fn sys_close(fd: usize) -> isize {
     syscall(SYSCALL_CLOSE, [fd, 0, 0])
+}
+
+// 创建管道
+// - pipe：将管道创建的读和写的两个文件描述符，写入pipe数组中
+// - 返回值：成功返回0，失败返回-1。
+pub fn sys_pipe(pipe: &mut [usize]) -> isize {
+    syscall(SYSCALL_PIPE, [pipe.as_mut_ptr() as usize, 0, 0])
+}
+
+// 复制文件描述符到新的文件描述符
+// - fd：待复制的文件描述符
+// - 返回值：成功返回新的文件描述符（会是最小的可用文件描述符），失败返回-1。
+pub fn sys_dup(fd: usize) -> isize {
+    syscall(SYSCALL_DUP, [fd, 0, 0])
 }
 
 // 读取文件到内存缓冲区
@@ -57,6 +79,11 @@ pub fn sys_sbrk(size: i32) -> isize {
     syscall(SYSCALL_SBRK, [size as usize, 0, 0])
 }
 
+// 向指定进程发送信号
+pub fn sys_kill(pid: usize, signal: i32) -> isize {
+    syscall(SYSCALL_KILL, [pid, signal as usize, 0])
+}
+
 // 获取CPU时间（ms）
 pub fn sys_get_time() -> isize {
     syscall(SYSCALL_GET_TIME, [0, 0, 0])
@@ -73,9 +100,13 @@ pub fn sys_fork() -> isize {
 
 // 将ELF可执行文件加载到当前进程的地址空间，并开始执行。
 // - path：ELF文件的路径。
+// - args：参数列表。
 // - 返回值：执行成功则不返回，失败则返回-1。
-pub fn sys_exec(path: &str) -> isize {
-    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, 0, 0])
+pub fn sys_exec(path: &str, args: &[*const u8]) -> isize {
+    syscall(
+        SYSCALL_EXEC,
+        [path.as_ptr() as usize, args.as_ptr() as usize, 0],
+    )
 }
 
 // 找到当前进程的僵尸子进程，回收全部资源
@@ -112,4 +143,32 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
         );
     }
     ret
+}
+
+// 为当前进程注册信号处理函数
+// - signum：信号的编号
+// - action：要注册的信号处理函数的指针
+// - old_action：保存原先的信号处理函数的指针
+// - 返回值：成功返回0，失败返回-1（如信号类型不存在，action 或 old_action 为空指针）
+pub fn sys_sigaction(
+    signum: i32,
+    action: *const SignalAction,
+    old_action: *mut SignalAction,
+) -> isize {
+    syscall(
+        SYSCALL_SIGACTION,
+        [signum as usize, action as usize, old_action as usize],
+    )
+}
+
+// 为当前进程设置全局的信号屏蔽
+// - mask：信号屏蔽码。每位代表一个信号，1表示屏蔽，0表示不屏蔽。
+pub fn sys_sigprocmask(mask: u32) -> isize {
+    syscall(SYSCALL_SIGPROCMASK, [mask as usize, 0, 0])
+}
+
+// 通知内核，进程的信号处理程序退出，可以恢复正常的执行流
+// - 返回值：成功返回0，失败返回-1
+pub fn sys_sigreturn() -> isize {
+    syscall(SYSCALL_SIGRETURN, [0, 0, 0])
 }
