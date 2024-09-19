@@ -3,7 +3,7 @@ use crate::{
     mm::{translated_ref, translated_refmut, translated_str},
     task::{
         add_task, current_task, current_task_pid, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        pid2task, suspend_current_and_run_next, SignalAction, SignalFlags, MAX_SIG,
     },
     timer::get_time_ms,
 };
@@ -123,7 +123,104 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
         let task = current_task().unwrap();
         let argc = args_vec.len();
         task.exec(data.as_slice(), args_vec);
-        argc as isize // 这个返回值没有意义，因为在exec方法里，已经重新初始化了Trap上下文
+        argc as isize // 这个返回值会被赋给x[10]
+    } else {
+        -1
+    }
+}
+
+// Linux内核规定，不允许对信号SIGKILL和SIGSTOP自定义处理逻辑
+fn check_sigaction_error(signal: SignalFlags, action: usize, old_action: usize) -> bool {
+    action == 0
+        || old_action == 0
+        || signal == SignalFlags::SIGKILL
+        || signal == SignalFlags::SIGSTOP
+}
+
+// 为当前进程注册信号处理函数
+// - signum：信号的编号
+// - action：要注册的信号处理函数的指针
+// - old_action：保存原先的信号处理函数的指针
+// - 返回值：成功返回0，失败返回-1（如信号类型不存在，action 或 old_action 为空指针）
+pub fn sys_sigaction(
+    signum: i32,
+    action: *const SignalAction,
+    old_action: *mut SignalAction,
+) -> isize {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if signum as usize > MAX_SIG {
+        return -1;
+    }
+    if let Some(flag) = SignalFlags::from_bits(1 << signum) {
+        if check_sigaction_error(flag, action as usize, old_action as usize) {
+            return -1;
+        }
+        let prev_action = inner.signal_actions.table[signum as usize];
+        *translated_refmut(token, old_action) = prev_action;
+        // 注意，action不能跨页。要通过16字节对齐来保证。
+        inner.signal_actions.table[signum as usize] = *translated_ref(token, action);
+        0
+    } else {
+        -1
+    }
+}
+
+// 设置当前进程的全局信号掩码。
+// - mask：信号掩码，每一位代表一个信号，1表示屏蔽，0表示不屏蔽。
+// - 返回值：成功返回原先的信号掩码，失败返回-1（如传参错误）
+// syscall ID: 135
+pub fn sys_sigprocmask(mask: u32) -> isize {
+    if let Some(task) = current_task() {
+        let mut inner = task.inner_exclusive_access();
+        let old_mask = inner.signal_mask;
+        if let Some(flag) = SignalFlags::from_bits(mask) {
+            inner.signal_mask = flag;
+            old_mask.bits() as isize
+        } else {
+            -1
+        }
+    } else {
+        -1
+    }
+}
+
+// 通知内核，进程的信号处理程序退出，可以恢复正常的执行流
+// - 返回值：成功返回0，失败返回-1
+pub fn sys_sigreturn() -> isize {
+    if let Some(task) = current_task() {
+        let mut inner = task.inner_exclusive_access();
+        inner.handling_sig = -1;
+        // 恢复进程信号处理逻辑前，保存的Trap上下文
+        let trap_ctx = inner.get_trap_cx();
+        *trap_ctx = inner.trap_ctx_backup.unwrap();
+        // Here we return the value of a0 in the trap_ctx,
+        // otherwise it will be overwritten after we trap
+        // back to the original execution of the application.
+        trap_ctx.x[10] as isize
+    } else {
+        -1
+    }
+}
+
+/// 向进程（可以是自身）发送信号。
+/// - pid：接受信号的进程的PID
+/// - signum：要发送的信号的编号。
+/// - 返回值：成功返回0，失败返回-1（如进程或信号类型不存在）
+pub fn sys_kill(pid: usize, signum: i32) -> isize {
+    if let Some(task) = pid2task(pid) {
+        if let Some(flag) = SignalFlags::from_bits(1 << signum) {
+            let mut task_ref = task.inner_exclusive_access();
+            if task_ref.signals.contains(flag) {
+                return -1;
+            }
+            // 实现很简单，就将信号插入到进程控制块的signals字段
+            task_ref.signals.insert(flag);
+            0
+        } else {
+            -1
+        }
     } else {
         -1
     }

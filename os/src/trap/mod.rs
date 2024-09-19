@@ -5,8 +5,9 @@ use crate::{
     mm::VirtAddr,
     syscall::syscall,
     task::{
-        current_task, current_task_pid, current_trap_cx, current_user_token,
-        exit_current_and_run_next, suspend_current_and_run_next,
+        check_signals_error_of_current, current_add_signal, current_task, current_task_pid,
+        current_trap_cx, current_user_token, exit_current_and_run_next, handle_signals,
+        suspend_current_and_run_next, SignalFlags,
     },
     timer::set_next_trigger,
 };
@@ -94,13 +95,12 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::LoadPageFault) => {
             if !handle_page_fault(stval) {
                 println_kernel!(
-                "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
-                scause.cause(),
-                current_task_pid(),
-                stval,
-                current_trap_cx().sepc,
-            );
-                exit_current_and_run_next(-2);
+                    "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
+                    scause.cause(),
+                    current_task_pid(),
+                    stval,
+                    current_trap_cx().sepc);
+                current_add_signal(SignalFlags::SIGSEGV);
             }
         }
         // 非法指令
@@ -109,7 +109,7 @@ pub fn trap_handler() -> ! {
                 "IllegalInstruction in PID {}, killed by kernel.",
                 current_task_pid()
             );
-            exit_current_and_run_next(-3);
+            current_add_signal(SignalFlags::SIGILL);
         }
         // 暂时不支持的Trap类型
         _ => {
@@ -119,6 +119,13 @@ pub fn trap_handler() -> ! {
                 stval
             );
         }
+    }
+    // 处理信号
+    handle_signals();
+    // 如果检查到错误信号，就退出当前进程，切换到下一个进程
+    if let Some((errno, msg)) = check_signals_error_of_current() {
+        println_kernel!("signal error {}", msg);
+        exit_current_and_run_next(errno);
     }
     trap_return();
 }

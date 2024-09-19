@@ -1,8 +1,9 @@
 use core::cell::RefMut;
 
 use super::{
+    action::SignalActions,
     pid::{KernelStack, PidHandle},
-    pid_alloc, TaskContext,
+    pid_alloc, SignalFlags, TaskContext,
 };
 use crate::{
     config::TRAP_CONTEXT,
@@ -53,6 +54,22 @@ pub struct TaskControlBlockInner {
     // 文件描述符表
     // 元素所在的下标就是文件描述符。如果元素为None，则表示该文件描述符未被使用，可以重新被分配。
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+
+    // 进程对每个信号的处理函数
+    pub signal_actions: SignalActions,
+    // 全局的信号掩码集合。该集合中的信号，将始终被该进程屏蔽。
+    pub signal_mask: SignalFlags,
+    // 当前进程已收到，但尚未处理的信号集合
+    pub signals: SignalFlags,
+    // 当前进程正在处理的信号
+    pub handling_sig: isize,
+    // 执行进程定义的信号处理逻辑时，要保存的上下文。
+    // 从信号处理逻辑返回后，要恢复该上下文。
+    pub trap_ctx_backup: Option<TrapContext>,
+    // 进程是否已经被杀死
+    pub killed: bool,
+    // 进程是否被挂起（收到SIGSTOP后的状态，并由SIGCONT恢复）
+    pub frozen: bool,
 
     // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
     pub heap_bottom: usize,
@@ -152,6 +169,13 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: Self::init_fd_table(),
+                    signal_actions: SignalActions::default(),
+                    signal_mask: SignalFlags::empty(),
+                    signals: SignalFlags::empty(),
+                    handling_sig: -1,
+                    trap_ctx_backup: None,
+                    killed: false,
+                    frozen: false,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                     mmap_va_allocator: VirtualAddressAllocator::default(),
@@ -200,6 +224,13 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table,
+                    signal_actions: parent_inner.signal_actions.clone(),
+                    signal_mask: parent_inner.signal_mask,
+                    signals: SignalFlags::empty(),
+                    handling_sig: -1,
+                    trap_ctx_backup: None,
+                    killed: false,
+                    frozen: false,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     mmap_va_allocator: VirtualAddressAllocator::default(),

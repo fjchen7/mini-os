@@ -1,6 +1,7 @@
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 // Trap上下文
 // 进入/退出Trap时，要恢复的寄存器只有：通用寄存器x[32]、sstatus、sepc
 // 剩余的kernel_satp、kernel_sp、trap_handler，在切换地址空间时使用
