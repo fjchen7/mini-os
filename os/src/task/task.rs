@@ -1,337 +1,89 @@
 use core::cell::RefMut;
 
 use super::{
-    action::SignalActions,
-    pid::{KernelStack, PidHandle},
-    pid_alloc, SignalFlags, TaskContext,
+    id::{kstack_alloc, KernelStack, TaskUserRes},
+    process::ProcessControlBlock,
+    TaskContext,
 };
-use crate::{
-    config::TRAP_CONTEXT,
-    fs::{File, Stdin, Stdout},
-    mm::{
-        translated_refmut, FileMapping, MemorySet, PhysPageNum, VirtAddr, VirtualAddressAllocator,
-        KERNEL_SPACE,
-    },
-    sync::UPSafeCell,
-    trap::{trap_handler, TrapContext},
-};
-use alloc::{
-    string::String,
-    sync::{Arc, Weak},
-    vec,
-    vec::Vec,
-};
-use easy_fs::Inode;
+use crate::{mm::PhysPageNum, sync::UPSafeCell, trap::TrapContext};
+use alloc::sync::{Arc, Weak};
 
-// 单个进程的控制块
-// 进程的执行状态、资源控制等元数据，都保存在该结构体中。
+// 线程控制块
 pub struct TaskControlBlock {
-    // 不可变
-    pub pid: PidHandle,
-    pub kernel_stack: KernelStack,
-    // inner存放运行时可变的元数据
+    pub process: Weak<ProcessControlBlock>,
+    pub kstack: KernelStack,
+    // 存放运行时可变的元数据
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
 pub struct TaskControlBlockInner {
-    // Trap上下文存放的物理页号。它的虚拟页是地址空间的次高页。
+    // 线程独有的TID和用户栈
+    pub res: Option<TaskUserRes>,
+    // 存放Trap上下文存放的物理页号
     pub trap_cx_ppn: PhysPageNum,
-    // 该进程的地址空间中，从0x0到用户栈结束所包含的字节。
-    // 它代表了该进程占用的内存大小（暂时不包含堆）。
-    pub base_size: usize,
     // 进程切换或时钟中断时，要保存的上下文
     pub task_cx: TaskContext,
-    // 进程的执行状态
+    // 线程的执行状态
     pub task_status: TaskStatus,
-    // 地址空间
-    pub memory_set: MemorySet,
-    // 父进程。使用Weak，避免循环引用。
-    pub parent: Option<Weak<TaskControlBlock>>,
-    // 子进程
-    pub children: Vec<Arc<TaskControlBlock>>,
-    // 进程退出时，返回的退出码保存在这里
-    pub exit_code: i32,
-    // 文件描述符表
-    // 元素所在的下标就是文件描述符。如果元素为None，则表示该文件描述符未被使用，可以重新被分配。
-    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
-
-    // 进程对每个信号的处理函数
-    pub signal_actions: SignalActions,
-    // 全局的信号掩码集合。该集合中的信号，将始终被该进程屏蔽。
-    pub signal_mask: SignalFlags,
-    // 当前进程已收到，但尚未处理的信号集合
-    pub signals: SignalFlags,
-    // 当前进程正在处理的信号
-    pub handling_sig: isize,
-    // 执行进程定义的信号处理逻辑时，要保存的上下文。
-    // 从信号处理逻辑返回后，要恢复该上下文。
-    pub trap_ctx_backup: Option<TrapContext>,
-    // 进程是否已经被杀死
-    pub killed: bool,
-    // 进程是否被挂起（收到SIGSTOP后的状态，并由SIGCONT恢复）
-    pub frozen: bool,
-
-    // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
-    pub heap_bottom: usize,
-    // 堆的顶部，即堆的结束地址。数字大。
-    // 这个指针的名字就叫program break。
-    pub program_brk: usize,
-    // mmap
-    pub mmap_va_allocator: VirtualAddressAllocator,
-    pub file_mappings: Vec<FileMapping>,
+    // 线程退出时，返回的退出码保存在这里
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
-// 任务的状态
 pub enum TaskStatus {
-    Ready,   // 准备运行
-    Running, // 正在运行
-    Zombie,  // 僵尸进程：进程已经结束，但父进程还没有回收它的资源
+    Ready,   // 就绪
+    Running, // 运行
+    Blocked, // 阻塞
 }
 
 impl TaskControlBlockInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
     }
-    pub fn get_user_token(&self) -> usize {
-        self.memory_set.token()
-    }
+
+    #[allow(unused)]
     fn get_status(&self) -> TaskStatus {
         self.task_status
-    }
-    pub fn is_zombie(&self) -> bool {
-        self.get_status() == TaskStatus::Zombie
-    }
-    // 分配一个文件描述符
-    pub fn alloc_fd(&mut self) -> usize {
-        if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
-            fd
-        } else {
-            self.fd_table.push(None);
-            self.fd_table.len() - 1
-        }
-    }
-
-    pub fn find_file_mapping_mut(&mut self, file: &Arc<Inode>) -> Option<&mut FileMapping> {
-        self.file_mappings
-            .iter_mut()
-            .find(|m| Arc::ptr_eq(&m.file, file))
     }
 }
 
 impl TaskControlBlock {
+    // 创建线程控制块
+    pub fn new(
+        process: Arc<ProcessControlBlock>,
+        ustack_base: usize,
+        alloc_user_res: bool,
+    ) -> Self {
+        // 分配线程的资源：TID、用户栈、存放TrapContext的内存
+        let res = TaskUserRes::new(process.clone(), ustack_base, alloc_user_res);
+        let trap_cx_ppn = res.trap_cx_ppn();
+        // 分配线程的内核栈
+        // 这里的实现，trap_cx和kstack的地址范围都在跳板之下，可能是重叠的。但它们分别位于进程和内核的地址空间中，不会冲突。
+        let kstack = kstack_alloc();
+        let kstack_top = kstack.get_top();
+        Self {
+            process: Arc::downgrade(&process),
+            kstack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    res: Some(res),
+                    trap_cx_ppn,
+                    task_cx: TaskContext::goto_trap_return(kstack_top),
+                    task_status: TaskStatus::Ready,
+                    exit_code: None,
+                })
+            },
+        }
+    }
+
     pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
         self.inner.exclusive_access()
     }
 
-    pub fn getpid(&self) -> usize {
-        self.pid.0
-    }
-
-    fn init_fd_table() -> Vec<Option<Arc<dyn File + Send + Sync>>> {
-        vec![
-            // 0 -> stdin
-            Some(Arc::new(Stdin)),
-            // 1 -> stdout
-            Some(Arc::new(Stdout)),
-            // 2 -> stderr
-            Some(Arc::new(Stdout)),
-        ]
-    }
-
-    // 解析ELF格式的二进制数据，创建一个新的进程
-    pub fn new(elf_data: &[u8]) -> Self {
-        // 解析ELF，得到地址空间、用户栈顶、入口地址
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
-        // 得到存放TrapContext的物理页号。该物理页在前面的from_elf中已经分配。
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-        // 分配新的PID
-        let pid_handle = pid_alloc();
-        // 在内核地址空间中，为该PID分配内核栈
-        let kernel_stack = KernelStack::new(&pid_handle);
-        let kernel_stack_top = kernel_stack.get_top();
-        // 初始化TaskContext，使得第一次切换到该进程时，能跳转到trap_return方法，进入它的用户态
-        let task_cx = TaskContext::goto_trap_return(kernel_stack_top);
-        let task_control_block = Self {
-            pid: pid_handle,
-            kernel_stack,
-            inner: unsafe {
-                UPSafeCell::new(TaskControlBlockInner {
-                    trap_cx_ppn,
-                    base_size: user_sp,
-                    task_cx,
-                    task_status: TaskStatus::Ready,
-                    memory_set,
-                    parent: None,
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table: Self::init_fd_table(),
-                    signal_actions: SignalActions::default(),
-                    signal_mask: SignalFlags::empty(),
-                    signals: SignalFlags::empty(),
-                    handling_sig: -1,
-                    trap_ctx_backup: None,
-                    killed: false,
-                    frozen: false,
-                    heap_bottom: user_sp,
-                    program_brk: user_sp,
-                    mmap_va_allocator: VirtualAddressAllocator::default(),
-                    file_mappings: vec![],
-                })
-            },
-        };
-        // 在用户空间，初始化该进程的TrapContext
-        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
-        *trap_cx = TrapContext::app_init_context(
-            entry_point,
-            user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
-            kernel_stack_top,
-            trap_handler as usize,
-        );
-        task_control_block
-    }
-
-    // 从父进程复制出一个子进程
-    pub fn fork(self: &Arc<Self>) -> Arc<Self> {
-        let mut parent_inner = self.inner_exclusive_access();
-        // 为子进程分配新的地址空间
-        let memory_set = MemorySet::from_existed_user(&parent_inner.memory_set);
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-        // 为子进程分配新的PID和内核栈
-        let pid_handle = pid_alloc();
-        let kernel_stack = KernelStack::new(&pid_handle);
-        let kernel_stack_top = kernel_stack.get_top();
-        // 复制父进程的fd
-        let fd_table = parent_inner.fd_table.clone();
-        let task_control_block = Arc::new(TaskControlBlock {
-            pid: pid_handle,
-            kernel_stack,
-            inner: unsafe {
-                let value = TaskControlBlockInner {
-                    trap_cx_ppn,
-                    base_size: parent_inner.base_size,
-                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
-                    task_status: TaskStatus::Ready,
-                    memory_set,
-                    parent: Some(Arc::downgrade(self)),
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table,
-                    signal_actions: parent_inner.signal_actions.clone(),
-                    signal_mask: parent_inner.signal_mask,
-                    signals: SignalFlags::empty(),
-                    handling_sig: -1,
-                    trap_ctx_backup: None,
-                    killed: false,
-                    frozen: false,
-                    heap_bottom: parent_inner.heap_bottom,
-                    program_brk: parent_inner.program_brk,
-                    mmap_va_allocator: VirtualAddressAllocator::default(),
-                    file_mappings: vec![],
-                };
-                UPSafeCell::new(value)
-            },
-        });
-        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
-        trap_cx.kernel_sp = kernel_stack_top;
-        // 更新父进程的children
-        parent_inner.children.push(task_control_block.clone());
-        task_control_block
-    }
-
-    // 申请新的地址空间，加载ELF文件。这将替换原来的地址空间，同时初始化TrapContext。
-    // 在操作系统上执行程序，都会fork父进程，然后再调用这个方法。
-    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
-        // 申请新的地址空间，加载ELF文件
-        let (memory_set, mut user_sp, entry_point) = MemorySet::from_elf(elf_data);
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-        let base_size = user_sp;
-
-        // 将参数压入用户栈
-        let size_of_ptr = core::mem::size_of::<usize>();
-        let token = memory_set.token();
-        let args_len = args.len();
-        // 先压入指向参数的指针
-        user_sp -= (args_len + 1) * size_of_ptr;
-        let argv_base = user_sp;
-        let mut argv: Vec<_> = (0..=args_len)
-            .map(|i| translated_refmut(token, (argv_base + i * size_of_ptr) as *mut usize))
-            .collect();
-        // 多出来的一个指针，指向NULL，表示数组结束
-        *argv[args_len] = 0;
-        // 再压入参数的字符串值
-        for i in 0..args_len {
-            user_sp -= args[i].len() + 1;
-            *argv[i] = user_sp;
-            let mut p = user_sp;
-            // 从栈的低位往高位存放字符串
-            for c in args[i].as_bytes() {
-                *translated_refmut(token, p as *mut u8) = *c;
-                p += 1;
-            }
-            // 字符串要以\0结尾。该字节位于栈的高位。
-            *translated_refmut(token, p as *mut u8) = 0;
-        }
-        // 对齐到指针大小
-        user_sp -= user_sp % size_of_ptr;
-
-        let mut inner = self.inner_exclusive_access();
-        // 将该进程块的内存空间替换为新的内存空间
-        inner.memory_set = memory_set;
-        inner.trap_cx_ppn = trap_cx_ppn;
-        inner.base_size = base_size;
-        inner.heap_bottom = user_sp; // TODO: fix new heap bottom
-        inner.program_brk = user_sp;
-        inner.mmap_va_allocator = VirtualAddressAllocator::default();
-        inner.file_mappings = vec![];
-        let mut trap_cx = TrapContext::app_init_context(
-            entry_point,
-            user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
-            self.kernel_stack.get_top(),
-            trap_handler as usize,
-        );
-        // 进入方法时，寄存器a0(x[10])和a1(x[11])会分别作为方法的第1个和第2个参数传入
-        // 这里对应的，就是main(int argc, char *argv[])中的两个参数
-        // （在我们的用户程序里，入口函数是_start，它包了一层main）
-        //
-        // 实际上这里x[10]的赋值没有意义，因为在trap_handler里，执行系统调用后，会把其返回值（sys_exec的返回值就是argc）赋给x[10]
-        trap_cx.x[10] = args.len(); // argc
-        trap_cx.x[11] = argv_base; // argv
-        *inner.get_trap_cx() = trap_cx;
-    }
-
-    // 增加或减少堆的大小
-    // 改变成功时，返回原来堆的结束位置（最高位）
-    pub fn change_program_brk(&self, size: i32) -> Option<usize> {
-        let mut inner = self.inner_exclusive_access();
-        let old_break = inner.program_brk;
-        let new_brk = inner.program_brk as isize + size as isize;
-        if new_brk < inner.heap_bottom as isize {
-            return None;
-        }
-        let heap_bottom = VirtAddr(inner.heap_bottom);
-        let new_end = VirtAddr(new_brk as usize);
-        let result = if size < 0 {
-            inner.memory_set.shrink_to(heap_bottom, new_end)
-        } else {
-            inner.memory_set.append_to(heap_bottom, new_end)
-        };
-        if result {
-            inner.program_brk = new_brk as usize;
-            Some(old_break)
-        } else {
-            None
-        }
+    // 拿到所在进程的内存空间的token
+    pub fn get_user_token(&self) -> usize {
+        let process = self.process.upgrade().unwrap();
+        let inner = process.inner_exclusive_access();
+        inner.memory_set.token()
     }
 }
