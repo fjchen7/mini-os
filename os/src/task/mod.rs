@@ -24,7 +24,7 @@ use task::{TaskControlBlock, TaskStatus};
 
 pub use action::SignalAction;
 pub use manager::add_task;
-pub use manager::pid2task;
+pub use manager::pid2process;
 pub use id::pid_alloc;
 pub use processor::{
     current_task, current_task_pid, current_trap_cx, current_user_token, run_tasks, schedule,
