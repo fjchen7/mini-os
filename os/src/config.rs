@@ -15,15 +15,6 @@ pub const PAGE_SIZE_BITS: usize = 12;
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
 
-// 返回内核的地址空间中，属于该PID进程的内核栈的地址范围
-// 该区域位于高256GB区域的跳板（Trampoline）之下
-// Linux中，从已用的最大pid上递增，赋给新创建的进程。先前这里的参数名为app_id，两者的作用其实差不多。
-pub fn kernel_stack_position(pid: usize) -> (usize, usize) {
-    let top = TRAMPOLINE - pid * (KERNEL_STACK_SIZE + PAGE_SIZE);
-    let bottom = top - KERNEL_STACK_SIZE;
-    (bottom, top)
-}
-
 // 物理内存的结束地址
 // 在linker.ld中，我们将将内核数据的结束地址（ekernel）定为0x80_000_000
 // 因此我们的物理内存大小为8MB

@@ -6,7 +6,8 @@
 mod action;
 mod context;
 mod manager;
-mod pid;
+mod id;
+mod process;
 mod processor;
 mod signal;
 mod switch;
@@ -24,7 +25,7 @@ use task::{TaskControlBlock, TaskStatus};
 pub use action::SignalAction;
 pub use manager::add_task;
 pub use manager::pid2task;
-pub use pid::pid_alloc;
+pub use id::pid_alloc;
 pub use processor::{
     current_task, current_task_pid, current_trap_cx, current_user_token, run_tasks, schedule,
     take_current_task,
