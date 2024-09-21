@@ -26,10 +26,11 @@ fn panic(info: &PanicInfo) -> ! {
 // 打印函数的调用栈
 pub unsafe fn print_stack_trace() {
     let mut fp: *const usize;
+    let stop = current_kstack_top();
     asm!("mv {}, fp", out(reg) fp);
-    println!("\u{1B}[31m[{}]\u{1B}[0m", "Stack Backtrace");
+    println!("\u{1B}[31m[{}]\u{1B}[0m", "---START BACKTRACE---");
     let mut i = 0;
-    while !fp.is_null() {
+    while !fp.is_null() && *fp != stop {
         let saved_ra = *fp.sub(1);
         let saved_fp = *fp.sub(2);
 
@@ -41,4 +42,5 @@ pub unsafe fn print_stack_trace() {
         i += 1;
         fp = saved_fp as *const usize;
     }
+    println!("\u{1B}[31m[{}]\u{1B}[0m", "---END   BACKTRACE---");
 }

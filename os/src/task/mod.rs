@@ -5,8 +5,8 @@
 
 mod action;
 mod context;
-mod manager;
 mod id;
+mod manager;
 mod process;
 mod processor;
 mod signal;
@@ -18,23 +18,27 @@ use crate::fs::open_file;
 use crate::fs::OpenFlags;
 use crate::sbi::shutdown;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use id::TaskUserRes;
 use lazy_static::*;
 use manager::remove_from_pid2task;
+use manager::remove_task;
+use process::ProcessControlBlock;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use action::SignalAction;
+pub use id::pid_alloc;
 pub use manager::add_task;
 pub use manager::pid2process;
-pub use id::pid_alloc;
 pub use processor::{
-    current_task, current_task_pid, current_trap_cx, current_user_token, run_tasks, schedule,
-    take_current_task,
+    current_kstack_top, current_process, current_task, current_task_pid, current_trap_cx,
+    current_user_token, run_tasks, schedule, take_current_task,
 };
 pub use signal::{SignalFlags, MAX_SIG};
 
 pub use context::TaskContext;
 
-/// Suspend the current 'Running' task and run the next task in task list.
+// 挂起当前任务，并运行下一个任务
 pub fn suspend_current_and_run_next() {
     // 获取当前正在运行的任务
     let task = take_current_task().unwrap();
@@ -51,115 +55,161 @@ pub fn suspend_current_and_run_next() {
     schedule(task_cx_ptr);
 }
 
+// 阻塞当前线程，并运行下一个线程
+pub fn block_current_and_run_next() {
+    let task = take_current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_status = TaskStatus::Blocked;
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    drop(task_inner);
+    schedule(task_cx_ptr);
+}
+
 pub const IDLE_PID: usize = 0;
 
-// 退出当前进程，并运行下一个进程
+// 退出当前线程，并运行下一个线程
 pub fn exit_current_and_run_next(exit_code: i32) {
     let task = take_current_task().unwrap();
-    let pid = task.getpid();
-
-    // 如果是idle进程退出，则直接关机
-    if pid == IDLE_PID {
-        println_kernel!("Idle process exit with exit_code {} ...", exit_code);
-        let failure = exit_code != 0;
-        shutdown(failure);
-    }
-    remove_from_pid2task(pid);
-
-    let mut inner = task.inner_exclusive_access();
-    // 将要退出的进程的状态设置为Zombie
-    inner.task_status = TaskStatus::Zombie;
-    inner.exit_code = exit_code;
-
-    // 将该任务的所有子进程，都移交给initproc
-    {
-        let mut initproc_inner = INITPROC.inner_exclusive_access();
-        for child in inner.children.iter() {
-            child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
-            initproc_inner.children.push(child.clone());
-        }
-        inner.children.clear();
-    }
-
-    // 回收分配给该进程的物理页。
-    // 这是子进程成为僵尸进程后，先回收的部分资源。剩余未回收的资源，由父进程或initproc进程回收。
-    inner.memory_set.recycle_data_pages();
-    // write back dirty pages
-    for mapping in inner.file_mappings.iter() {
-        mapping.sync();
-    }
-    drop(inner);
+    let mut task_inner = task.inner_exclusive_access();
+    let process = task.process.upgrade().unwrap();
+    let tid = task_inner.res.as_ref().unwrap().tid;
+    // 设置线程的退出码
+    task_inner.exit_code = Some(exit_code);
+    // 释放线程资源（TID、用户栈、存放Trap上下文的内存）。RAII帮你做了这件事。
+    task_inner.res = None;
+    // 但线程的内核栈（kstack）尚未释放。需要调用sys_waittid才能释放。
+    drop(task_inner);
     drop(task);
 
+    // 如果退出的是主线程，则将退出整个进程
+    if tid == 0 {
+        let pid = process.getpid();
+        // 如果是idle进程退出，则直接关机
+        if pid == IDLE_PID {
+            println_kernel!("Idle process exit with exit_code {} ...", exit_code);
+            let failure = exit_code != 0;
+            shutdown(failure);
+        }
+        remove_from_pid2task(pid);
+
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.is_zombie = true;
+        process_inner.exit_code = exit_code;
+
+        // 将该任务的所有子进程，都移交给initproc
+        {
+            let mut initproc_inner = INITPROC.inner_exclusive_access();
+            for child in process_inner.children.iter() {
+                child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
+                initproc_inner.children.push(child.clone());
+            }
+            process_inner.children.clear();
+        }
+
+        // 回收分配给该进程的线程的所有资源（tid/trap_cx/ustack）
+        // 这要在回收memory_set之前进行，否则会被回收两次。
+        let mut recycle_res = Vec::<TaskUserRes>::new();
+        for task in process_inner.tasks.iter().filter(|t| t.is_some()) {
+            let task = task.as_ref().unwrap();
+            // 将线程从任务队列中移除
+            remove_inactive_task(task.clone());
+            let mut task_inner = task.inner_exclusive_access();
+            if let Some(res) = task_inner.res.take() {
+                recycle_res.push(res);
+            }
+        }
+        // TaskUserRes实现了RAII。回收TaskUserRes时，会访问PCB inner，
+        // 所以这里要先drop它，避免双重借用的问题。
+        drop(process_inner);
+        recycle_res.clear();
+
+        let mut process_inner = process.inner_exclusive_access();
+        // 回收分配给该进程的物理页。
+        // 这是子进程成为僵尸进程后，先回收的部分资源。剩余未回收的资源，由父进程或initproc进程回收。
+        process_inner.memory_set.recycle_data_pages();
+        // 写回脏页
+        for mapping in process_inner.file_mappings.iter() {
+            mapping.sync();
+        }
+        while process_inner.tasks.len() > 1 {
+            process_inner.tasks.pop();
+        }
+    }
+    drop(process);
     // 进入调度逻辑。该_unused变量，实际就是Processor下的idle_task_cx。
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
 }
 
 lazy_static! {
-    // 全局的initproc进程，用来初始化用户shell
-    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
+    // 全局的initproc进程，用来初始化shell
+    pub static ref INITPROC: Arc<ProcessControlBlock> = {
         let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
-        TaskControlBlock::new(v.as_slice())
-    });
+        ProcessControlBlock::new(v.as_slice())
+    };
 }
 
 // 将initproc添加到任务管理器中
 pub fn add_initproc() {
-    add_task(INITPROC.clone());
+    let _initproc = INITPROC.clone();
+}
+
+pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
+    remove_task(Arc::clone(&task));
 }
 
 pub fn check_signals_error_of_current() -> Option<(i32, &'static str)> {
-    let task = current_task().unwrap();
-    let task_inner = task.inner_exclusive_access();
-    task_inner.signals.check_error()
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
+    inner.signals.check_error()
 }
 
 // 将一个要处理的信号，加到当前的进程中
 pub fn current_add_signal(signal: SignalFlags) {
-    let task = current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
-    task_inner.signals |= signal;
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.signals |= signal;
 }
 
 // 由内核处理的信号
 fn call_kernel_signal_handler(signal: SignalFlags) {
-    let task = current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
     match signal {
         SignalFlags::SIGSTOP => {
-            task_inner.frozen = true;
+            process_inner.frozen = true;
             // 将SIGSTOP从待处理的信号集合中移除
-            task_inner.signals ^= SignalFlags::SIGSTOP;
+            process_inner.signals ^= SignalFlags::SIGSTOP;
         }
         SignalFlags::SIGCONT => {
-            if task_inner.signals.contains(SignalFlags::SIGCONT) {
+            if process_inner.signals.contains(SignalFlags::SIGCONT) {
                 // 将SIGCONT从待处理的信号集合中移除
-                task_inner.signals ^= SignalFlags::SIGCONT;
-                task_inner.frozen = false;
+                process_inner.signals ^= SignalFlags::SIGCONT;
+                process_inner.frozen = false;
             }
         }
         _ => {
-            task_inner.killed = true;
+            process_inner.killed = true;
         }
     }
 }
 
 // 由用户进程处理的信号
 fn call_user_signal_handler(sig: usize, signal: SignalFlags) {
-    let task = current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
-    let handler = task_inner.signal_actions.table[sig].handler;
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    let handler = process_inner.signal_actions.table[sig].handler;
     if handler != 0 {
         // 标记当前信号正在处理
-        task_inner.handling_sig = sig as isize;
+        process_inner.handling_sig = sig as isize;
         // 将当前要处理的信号，从待处理的信号集合中移除
-        task_inner.signals ^= signal;
+        process_inner.signals ^= signal;
 
         // 保存进入信号处理逻辑前的上下文
-        let trap_ctx = task_inner.get_trap_cx();
-        task_inner.trap_ctx_backup = Some(*trap_ctx);
+        // let trap_ctx = task_inner.get_trap_cx();
+        let trap_ctx = current_trap_cx();
+        process_inner.trap_ctx_backup = Some(*trap_ctx);
 
         // 设置信号处理逻辑的函数入口
         trap_ctx.sepc = handler;
@@ -179,20 +229,20 @@ fn call_user_signal_handler(sig: usize, signal: SignalFlags) {
 // 检查收到的信号，并对它们进行处理
 fn check_pending_signals() {
     for sig in 0..(MAX_SIG + 1) {
-        let task = current_task().unwrap();
-        let task_inner = task.inner_exclusive_access();
+        let process = current_process();
+        let process_inner = process.inner_exclusive_access();
         let signal = SignalFlags::from_bits(1 << sig).unwrap();
-        if task_inner.signals.contains(signal) && (!task_inner.signal_mask.contains(signal)) {
+        if process_inner.signals.contains(signal) && (!process_inner.signal_mask.contains(signal)) {
             let mut masked = true;
             // 检查该即将要处理的信号，是否被当前正在处理的信号屏蔽
-            let handling_sig = task_inner.handling_sig;
+            let handling_sig = process_inner.handling_sig;
             if handling_sig == -1 {
                 // 如果当前不在处理其他信号，则没有信号屏蔽
                 masked = false;
             } else {
                 // 如果当前在处理其他信号，则检查当前信号是否屏蔽了该即将要处理的信号
                 let handling_sig = handling_sig as usize;
-                if !task_inner.signal_actions.table[handling_sig]
+                if !process_inner.signal_actions.table[handling_sig]
                     .mask
                     .contains(signal)
                 {
@@ -200,8 +250,8 @@ fn check_pending_signals() {
                 }
             }
             if !masked {
-                drop(task_inner);
-                drop(task);
+                drop(process_inner);
+                drop(process);
                 if signal == SignalFlags::SIGKILL
                     || signal == SignalFlags::SIGSTOP
                     || signal == SignalFlags::SIGCONT
@@ -225,7 +275,7 @@ pub fn handle_signals() {
         // 真正处理信号的逻辑在check_pending_signals里
         check_pending_signals();
         let (frozen, killed) = {
-            let task = current_task().unwrap();
+            let task = current_process();
             let task_inner = task.inner_exclusive_access();
             (task_inner.frozen, task_inner.killed)
         };
