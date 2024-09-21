@@ -7,14 +7,14 @@ use crate::fs::{make_pipe, open_file, OSInode, OpenFlags};
 use crate::mm::{
     translated_byte_buffer, translated_refmut, translated_str, FileMapping, UserBuffer,
 };
-use crate::task::{current_task, current_user_token};
+use crate::task::{current_process, current_user_token};
 
 // 将buf中长度为len的字节，写入到文件fd中
 // 返回值：成功写入的字节数。如果出错则返回-1。
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -34,8 +34,8 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 // 返回值：成功读取的字节数。如果出错则返回-1。
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
+    let process = current_process();
+    let inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -56,11 +56,11 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 // - flags: 打开文件的标志
 // 返回值：返回打开文件的文件描述符。如果出错则返回 -1。
 pub fn sys_open(path: *const u8, flags: u32) -> isize {
-    let task = current_task().unwrap();
+    let process = current_process();
     let token = current_user_token();
     let path = translated_str(token, path);
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
-        let mut inner = task.inner_exclusive_access();
+        let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
         fd as isize
@@ -70,8 +70,8 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
 }
 
 pub fn sys_close(fd: usize) -> isize {
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -94,8 +94,8 @@ pub fn sys_mmap(fd: usize, len: usize, offset: usize) -> isize {
         return -1;
     }
 
-    let task = current_task().unwrap();
-    let mut tcb = task.inner_exclusive_access();
+    let process = current_process();
+    let mut tcb = process.inner_exclusive_access();
     if fd >= tcb.fd_table.len() {
         return -1;
     }
@@ -136,9 +136,9 @@ pub fn sys_mmap(fd: usize, len: usize, offset: usize) -> isize {
 // - pipe：应用地址空间中，长度为 2 的 usize 数组的起始地址。该方法需要将所创建的读和写管道的文件描述符，写入到该数组中。
 // - 返回值：0成功，-1错误（如传入的地址不合法）。
 pub fn sys_pipe(pipe: *mut usize) -> isize {
-    let task = current_task().unwrap();
+    let process = current_process();
     let token = current_user_token();
-    let mut inner = task.inner_exclusive_access();
+    let mut inner = process.inner_exclusive_access();
     let (pipe_read, pipe_write) = make_pipe();
     let read_fd = inner.alloc_fd();
     inner.fd_table[read_fd] = Some(pipe_read);
@@ -154,8 +154,8 @@ pub fn sys_pipe(pipe: *mut usize) -> isize {
 // - fd：进程的已经打开文件的描述符。
 // - 返回值：成功则返回新的文件描述符，失败则返回 -1（比如传入的 fd 不合法）。
 pub fn sys_dup(fd: usize) -> isize {
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     if fd >= inner.fd_table.len() {
         return -1;
     }

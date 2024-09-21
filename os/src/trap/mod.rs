@@ -5,9 +5,9 @@ use crate::{
     mm::VirtAddr,
     syscall::syscall,
     task::{
-        check_signals_error_of_current, current_add_signal, current_task, current_task_pid,
-        current_trap_cx, current_user_token, exit_current_and_run_next, handle_signals,
-        suspend_current_and_run_next, SignalFlags,
+        check_signals_error_of_current, current_add_signal, current_process, current_task,
+        current_task_pid, current_trap_cx, current_user_token, exit_current_and_run_next,
+        handle_signals, suspend_current_and_run_next, SignalFlags,
     },
     timer::set_next_trigger,
 };
@@ -163,23 +163,23 @@ pub fn trap_return() -> ! {
 pub fn handle_page_fault(fault_addr: usize) -> bool {
     let fault_va: VirtAddr = fault_addr.into();
     let fault_vpn = fault_va.floor();
-    let task = current_task().unwrap();
-    let mut tcb = task.inner_exclusive_access();
+    let process = current_process();
+    let mut pcb = process.inner_exclusive_access();
 
     // 如果页表中已经有映射，那么不能处理
-    if let Some(pte) = tcb.memory_set.translate(fault_vpn) {
+    if let Some(pte) = pcb.memory_set.translate(fault_vpn) {
         if pte.is_valid() {
             return false;
         }
     }
 
-    match tcb.file_mappings.iter_mut().find(|m| m.contains(fault_va)) {
+    match pcb.file_mappings.iter_mut().find(|m| m.contains(fault_va)) {
         Some(mapping) => {
             let file = Arc::clone(&mapping.file);
             // 延迟加载，访问时才分配物理页。且如果之前已经映射过，那么不会再次分配物理页，共享之前的物理页。
             let (ppn, range, shared) = mapping.map(fault_va).unwrap();
             // 更新页表
-            tcb.memory_set.map(fault_vpn, ppn, range.perm);
+            pcb.memory_set.map(fault_vpn, ppn, range.perm);
             // 如果不是共享的（分配了新的物理页），则从文件中读取数据
             // 这是mmap的功能，即映射文件内容到内存
             if !shared {

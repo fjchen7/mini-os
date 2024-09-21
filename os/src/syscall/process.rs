@@ -2,8 +2,9 @@ use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_ref, translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_task_pid, current_user_token, exit_current_and_run_next,
-        pid2task, suspend_current_and_run_next, SignalAction, SignalFlags, MAX_SIG,
+        add_task, current_process, current_task, current_task_pid, current_user_token,
+        exit_current_and_run_next, pid2process, suspend_current_and_run_next, SignalAction,
+        SignalFlags, MAX_SIG,
     },
     timer::get_time_ms,
 };
@@ -31,8 +32,8 @@ pub fn sys_get_time() -> isize {
 // 增加或减少堆的大小。返回旧的堆顶地址。
 // brk表示堆顶指针，称为program break。
 pub fn sys_sbrk(size: i32) -> isize {
-    let current_task = current_task().unwrap();
-    if let Some(old_brk) = current_task.change_program_brk(size) {
+    let process = current_process();
+    if let Some(old_brk) = process.change_program_brk(size) {
         old_brk as isize
     } else {
         -1
@@ -52,9 +53,9 @@ pub fn sys_getpid() -> isize {
 //   - -2：等待的子进程均未退出；
 //   - 其他：结束的子进程的PID。
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    let task = current_task().unwrap();
+    let process = current_process();
 
-    let mut inner = task.inner_exclusive_access();
+    let mut inner = process.inner_exclusive_access();
     // 如果找不到对应的子进程，返回-1
     if !inner
         .children
@@ -87,15 +88,18 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 // 复制出一个子进程
 // 返回值：当前进程返回子进程的PID，子进程则返回0
 pub fn sys_fork() -> isize {
-    let current_task = current_task().unwrap();
-    let new_task = current_task.fork();
-    let new_pid = new_task.pid.0;
-    let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    let current_process = current_process();
+    let new_process = current_process.fork();
+    let new_pid = new_process.getpid();
+
+    // 获取子进程的主线程的Trap上下文。这是子进程的第一个任务。
+    let new_process_inner = new_process.inner_exclusive_access();
+    let task = new_process_inner.tasks[0].as_ref().unwrap();
+    let trap_cx = task.inner_exclusive_access().get_trap_cx();
+
     // 我们需要将子进程的fork返回值设为0，才能区分父子进程。返回值的地址在a0寄存器中。
     // x[10]就是a0寄存器
     trap_cx.x[10] = 0;
-    // 将子进程加入任务队列
-    add_task(new_task);
     new_pid as isize
 }
 
@@ -120,9 +124,9 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     }
     if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
         let data = app_inode.read_all();
-        let task = current_task().unwrap();
+        let process = current_process();
         let argc = args_vec.len();
-        task.exec(data.as_slice(), args_vec);
+        process.exec(data.as_slice(), args_vec);
         argc as isize // 这个返回值会被赋给x[10]
     } else {
         -1
@@ -148,8 +152,8 @@ pub fn sys_sigaction(
     old_action: *mut SignalAction,
 ) -> isize {
     let token = current_user_token();
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
     if signum as usize > MAX_SIG {
         return -1;
     }
@@ -172,15 +176,12 @@ pub fn sys_sigaction(
 // - 返回值：成功返回原先的信号掩码，失败返回-1（如传参错误）
 // syscall ID: 135
 pub fn sys_sigprocmask(mask: u32) -> isize {
-    if let Some(task) = current_task() {
-        let mut inner = task.inner_exclusive_access();
-        let old_mask = inner.signal_mask;
-        if let Some(flag) = SignalFlags::from_bits(mask) {
-            inner.signal_mask = flag;
-            old_mask.bits() as isize
-        } else {
-            -1
-        }
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    let old_mask = inner.signal_mask;
+    if let Some(flag) = SignalFlags::from_bits(mask) {
+        inner.signal_mask = flag;
+        old_mask.bits() as isize
     } else {
         -1
     }
@@ -189,19 +190,18 @@ pub fn sys_sigprocmask(mask: u32) -> isize {
 // 通知内核，进程的信号处理程序退出，可以恢复正常的执行流
 // - 返回值：成功返回0，失败返回-1
 pub fn sys_sigreturn() -> isize {
-    if let Some(task) = current_task() {
-        let mut inner = task.inner_exclusive_access();
-        inner.handling_sig = -1;
-        // 恢复进程信号处理逻辑前，保存的Trap上下文
-        let trap_ctx = inner.get_trap_cx();
-        *trap_ctx = inner.trap_ctx_backup.unwrap();
-        // Here we return the value of a0 in the trap_ctx,
-        // otherwise it will be overwritten after we trap
-        // back to the original execution of the application.
-        trap_ctx.x[10] as isize
-    } else {
-        -1
-    }
+    let process = current_process();
+    let task = current_task().unwrap();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.handling_sig = -1;
+    let inner = task.inner_exclusive_access();
+    // 恢复进程信号处理逻辑前，保存的Trap上下文
+    let trap_ctx = inner.get_trap_cx();
+    *trap_ctx = process_inner.trap_ctx_backup.unwrap();
+    // Here we return the value of a0 in the trap_ctx,
+    // otherwise it will be overwritten after we trap
+    // back to the original execution of the application.
+    trap_ctx.x[10] as isize
 }
 
 /// 向进程（可以是自身）发送信号。
@@ -209,9 +209,9 @@ pub fn sys_sigreturn() -> isize {
 /// - signum：要发送的信号的编号。
 /// - 返回值：成功返回0，失败返回-1（如进程或信号类型不存在）
 pub fn sys_kill(pid: usize, signum: i32) -> isize {
-    if let Some(task) = pid2task(pid) {
+    if let Some(process) = pid2process(pid) {
         if let Some(flag) = SignalFlags::from_bits(1 << signum) {
-            let mut task_ref = task.inner_exclusive_access();
+            let mut task_ref = process.inner_exclusive_access();
             if task_ref.signals.contains(flag) {
                 return -1;
             }
