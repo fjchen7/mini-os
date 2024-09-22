@@ -133,9 +133,9 @@ pub fn trap_handler() -> ! {
 #[no_mangle]
 // 设定参数，进入__restore方法，回到用户态
 pub fn trap_return() -> ! {
-    // 重新设置Trap处理函数的入口地址
+    // 先前进入Trap时，关闭了Trap处理函数的入口地址。现在重新设置它为__alltraps
     set_user_trap_entry();
-    let trap_cx_ptr = TRAP_CONTEXT;
+    let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     extern "C" {
         fn __alltraps();
@@ -152,7 +152,7 @@ pub fn trap_return() -> ! {
             "fence.i",
             "jr {restore_va}",             // 跳转到__restore。下面设定参数a0和a1。
             restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,      // a0 = Trap上下文的虚拟地址
+            in("a0") trap_cx_user_va,  // a0 = Trap上下文的虚拟地址
             in("a1") user_satp,        // a1 = 程序地址空间的根页表地址
             options(noreturn)
         );

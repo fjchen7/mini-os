@@ -24,7 +24,6 @@ use lazy_static::*;
 use manager::remove_from_pid2task;
 use manager::remove_task;
 use process::ProcessControlBlock;
-use task::{TaskControlBlock, TaskStatus};
 
 pub use action::SignalAction;
 pub use id::pid_alloc;
@@ -32,9 +31,10 @@ pub use manager::add_task;
 pub use manager::pid2process;
 pub use processor::{
     current_kstack_top, current_process, current_task, current_task_pid, current_trap_cx,
-    current_user_token, run_tasks, schedule, take_current_task,
+    current_trap_cx_user_va, current_user_token, run_tasks, schedule, take_current_task,
 };
 pub use signal::{SignalFlags, MAX_SIG};
+pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 

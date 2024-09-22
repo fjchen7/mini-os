@@ -10,7 +10,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const PAGE_SIZE_BITS: usize = 12;
 
 // 空间地址的高256GB存放（按高位到低位）：
-// - 跳板（Trampoline）：为不可执行的空数据
+// - 跳板（Trampoline）：存放__alltraps和__restore代码，用于进入/退出Trap
 // - TrapContext：保存Trap的上下文
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
