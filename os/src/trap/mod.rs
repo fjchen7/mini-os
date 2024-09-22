@@ -132,10 +132,18 @@ pub fn trap_handler() -> ! {
 }
 
 #[no_mangle]
-// 设定参数，进入__restore方法，回到用户态
+// 引入地址空间后，TrapContext放在了用户的地址空间中。
+//
+// __restore的任务，是从TrapContext中恢复上下文，回到用户态。
+// 为了让它能找到TrapContext，需要提供两个参数：
+// - TrapContext的虚拟地址
+// - 地址空间，即页表地址（satp寄存器的值）。
+//
+// trap_return的任务，就是提供这两个值作参数，并跳转到__restore。
 pub fn trap_return() -> ! {
     // 先前进入Trap时，关闭了Trap处理函数的入口地址。现在重新设置它为__alltraps
     set_user_trap_entry();
+    // 拿到执行__restore需要两个参数：TrapContext的虚拟地址和地址空间
     let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     extern "C" {

@@ -16,7 +16,7 @@
     .align 2
 
 # 该函数的功能：内核如何处理Trap。
-# 当前的寄存器代表程序的上下文，需要保存到栈（内核栈）上。
+# 当前的寄存器代表程序的上下文，需要保存到栈上。
 __alltraps:
     # 进入该方法时
     # - sscratch是程序的地址空间中，当前线程的Trap上下文的保存位置。
@@ -35,7 +35,6 @@ __alltraps:
     # 要保存的内容：通用寄存器x0~x31，sstatus和sepc
     # 需要分配34*8字节的栈帧给内核栈，这正是Rust定义的TrapContext的大小
     # 栈从高位往低位增长，现在sp的值为KERNEL_STACK[i] - size_of(TrapContext)
-    ############ addi sp, sp, -34*8
 
     # 保存x0~x31。实际上不保存这几个：
     #   - x0：固定为0，不需要保存
@@ -51,7 +50,7 @@ __alltraps:
         .set n, n+1
     .endr
 
-    # 保存sscratch/spec的值
+    # 保存sscratch/sepc的值
     # RISC-V中，数据处理和访指操作，只能使用通用寄存器。因此这里要先写入t0/t1，再写入内核栈。
     # t0（x5）/t1（x6）这两个寄存器，在上面都已经保存，可以随便使用。
     csrr t0, sstatus
@@ -81,24 +80,25 @@ __alltraps:
     jr t1
 
 # 该函数的功能：恢复程序的Trap上下文，并返回到用户态。
-# 所谓的恢复上下文，就是将保存了程序状态的寄存器值的某个栈，读到寄存器中。
+# 所谓的恢复上下文，就是将保存了任务状态的寄存器值的某个栈，读到寄存器中。
+# 任务表示的执行流。如果只有进程，则任务是进程。如果引入了线程，则任务就是单个线程。
 __restore:
     # 该方法有两个参数，分别存在寄存器：
-    # - a0：在该程序的地址空间中，Trap上下文的保存位置。对所有程序，该值都是相同的。
-    # - a1：该程序的所对应的satp寄存器的值（也叫token）。
+    # - a0：在任务地址空间中，Trap上下文的保存位置。
+    # - a1：该任务所对应的satp寄存器的值（也叫token）。
 
-    # 切换到程序的地址空间
+    # 切换到线程的地址空间
     csrw satp, a1
     # 刷新TLB
     sfence.vma
 
-    # 原本sscratch指向用户栈，a0指向TrapContext的保存位置。两者都在该程序的地址空间中。
+    # 原本sscratch指向用户栈，a0指向TrapContext的保存位置。两者都在该任务的地址空间中。
     # 现在交换sp和sscratch的值
     csrw sscratch, a0
     # 切换到用户栈上。栈顶是TrapContext。
     mv sp, a0
 
-    # 开始恢复程序的Trap上下文
+    # 开始恢复任务的Trap上下文
     # 恢复sstatus/sepc
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
@@ -119,6 +119,6 @@ __restore:
 
     # 执行Supervisor级特权指令sret，将控制流还给程序
     # sret指令会做：
-    #   - 将CSR寄存器spec中的值写入pc寄存器。程序会跳转到pc指向地址的指令上执行。
+    #   - 将CSR寄存器sepc中的值写入pc寄存器。程序会跳转到pc指向地址的指令上执行。
     #   - 根据sstatus寄存器的值，切换到特权级。0/1分别切换到User/Supervisor。
     sret
