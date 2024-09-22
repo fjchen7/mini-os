@@ -6,8 +6,8 @@ use crate::{
     syscall::syscall,
     task::{
         check_signals_error_of_current, current_add_signal, current_process, current_task,
-        current_task_pid, current_trap_cx, current_user_token, exit_current_and_run_next,
-        handle_signals, suspend_current_and_run_next, SignalFlags,
+        current_task_pid, current_trap_cx, current_trap_cx_user_va, current_user_token,
+        exit_current_and_run_next, handle_signals, suspend_current_and_run_next, SignalFlags,
     },
     timer::set_next_trigger,
 };
