@@ -12,7 +12,7 @@ use super::{
 use crate::{
     fs::{File, Stdin, Stdout},
     mm::{
-        translated_refmut, FileMapping, MemorySet, VirtAddr, VirtualAddressAllocator, KERNEL_SPACE,
+        kernel_token, translated_refmut, FileMapping, MemorySet, VirtAddr, VirtualAddressAllocator,
     },
     sync::UPSafeCell,
     trap::{trap_handler, TrapContext},
@@ -185,7 +185,7 @@ impl ProcessControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             ustack_top,
-            KERNEL_SPACE.exclusive_access().token(),
+            kernel_token(),
             kstack_top,
             trap_handler as usize,
         );
@@ -278,6 +278,14 @@ impl ProcessControlBlock {
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
         let new_token = memory_set.token();
 
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set = memory_set;
+        inner.heap_bottom = ustack_base; // TODO: fix new heap bottom
+        inner.program_brk = ustack_base;
+        inner.mmap_va_allocator = VirtualAddressAllocator::default();
+        inner.file_mappings = vec![];
+        drop(inner);
+
         // 替换主线程
         let task = self.inner_exclusive_access().get_task(0);
         let mut task_inner = task.inner_exclusive_access();
@@ -285,7 +293,8 @@ impl ProcessControlBlock {
         task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
         task_inner.res.as_mut().unwrap().alloc_user_res();
         task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
-        // 将参数压入用户栈
+
+        // 将exec的参数压入用户栈
         let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
         let size_of_ptr = core::mem::size_of::<usize>();
         user_sp -= (args.len() + 1) * size_of_ptr;
@@ -311,19 +320,11 @@ impl ProcessControlBlock {
         // 对齐到指针大小
         user_sp -= user_sp % size_of_ptr;
 
-        let mut inner = self.inner_exclusive_access();
-        inner.memory_set = memory_set;
-        inner.heap_bottom = ustack_base; // TODO: fix new heap bottom
-        inner.program_brk = ustack_base;
-        inner.mmap_va_allocator = VirtualAddressAllocator::default();
-        inner.file_mappings = vec![];
-
         // 替换TrapContext
         let mut trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            // TODO: 替换成kernel_token()
-            KERNEL_SPACE.exclusive_access().token(),
+            kernel_token(),
             task.kstack.get_top(),
             trap_handler as usize,
         );

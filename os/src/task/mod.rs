@@ -20,6 +20,7 @@ use crate::sbi::shutdown;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use id::TaskUserRes;
+use id::IDLE_PID;
 use lazy_static::*;
 use manager::remove_from_pid2task;
 use manager::remove_task;
@@ -64,8 +65,6 @@ pub fn block_current_and_run_next() {
     drop(task_inner);
     schedule(task_cx_ptr);
 }
-
-pub const IDLE_PID: usize = 0;
 
 // 退出当前线程，并运行下一个线程
 pub fn exit_current_and_run_next(exit_code: i32) {

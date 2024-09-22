@@ -2,7 +2,7 @@ use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_ref, translated_refmut, translated_str},
     task::{
-        add_task, current_process, current_task, current_task_pid, current_user_token,
+        current_process, current_task, current_task_pid, current_user_token,
         exit_current_and_run_next, pid2process, suspend_current_and_run_next, SignalAction,
         SignalFlags, MAX_SIG,
     },

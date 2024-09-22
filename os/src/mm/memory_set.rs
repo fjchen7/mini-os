@@ -6,7 +6,7 @@ use super::{
     page_table::{PTEFlags, PageTable, PageTableEntry},
 };
 use crate::{
-    config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE},
+    config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE},
     mm::address::StepByOne,
     sync::UPSafeCell,
 };
@@ -181,7 +181,6 @@ impl MemorySet {
                 MapPermission::R | MapPermission::W, // MMIO区域不可执行
             ));
         }
-
         for (name, start, end, map_type, map_perm) in sections {
             println_kernel!("{:<15} [{:#010x}, {:#010x})", name, start, end);
             let map_area = MapArea::new(start.into(), end.into(), map_type, map_perm);
@@ -246,46 +245,27 @@ impl MemorySet {
                 );
             }
         }
-        // 初始化保护页和用户栈
+        // 映射保护页（guard page），隔离用户栈
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_stack_bottom: usize = max_end_va.into();
-        // 映射保护页（guard page），大小为一个页
-        user_stack_bottom += PAGE_SIZE;
-        // 映射用户栈
-        let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
-        memory_set.push(
-            MapArea::new(
-                user_stack_bottom.into(),
-                user_stack_top.into(),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
+        let mut user_stack_base: usize = max_end_va.into();
+        user_stack_base += PAGE_SIZE;
+        // 注：线程位于进程地址空间的独有资源，包括用户栈和TrapContext，
+        // 在进程创建时不分配，线程创建时才分配。
+
+        // TODO：映射堆
         // 映射堆。通过系统调用sbrk可以申请/释放内存，改变堆的大小。
-        memory_set.push(
-            MapArea::new(
-                user_stack_top.into(),
-                user_stack_top.into(),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-            ),
-            None,
-        );
-        // 映射存放TrapContext的区域，这在地址空间的次高页（在地址空间的高256位中）。
-        // 地址空间的最高页是跳板（Trampoline），但它的映射关系是独立的，不归该地址空间结构体管理。
-        memory_set.push(
-            MapArea::new(
-                TRAP_CONTEXT.into(),
-                TRAMPOLINE.into(),
-                MapType::Framed,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
+        // memory_set.push(
+        //     MapArea::new(
+        //         user_stack_top.into(),
+        //         user_stack_top.into(),
+        //         MapType::Framed,
+        //         MapPermission::R | MapPermission::W | MapPermission::U,
+        //     ),
+        //     None,
+        // );
         (
             memory_set,
-            user_stack_top,
+            user_stack_base,
             elf.header.pt2.entry_point() as usize,
         )
     }

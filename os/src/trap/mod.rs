@@ -1,13 +1,13 @@
 mod context;
 
 use crate::{
-    config::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT},
+    config::{PAGE_SIZE, TRAMPOLINE},
     mm::VirtAddr,
     syscall::syscall,
     task::{
-        check_signals_error_of_current, current_add_signal, current_process, current_task,
-        current_task_pid, current_trap_cx, current_trap_cx_user_va, current_user_token,
-        exit_current_and_run_next, handle_signals, suspend_current_and_run_next, SignalFlags,
+        check_signals_error_of_current, current_add_signal, current_process, current_task_pid,
+        current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
+        handle_signals, suspend_current_and_run_next, SignalFlags,
     },
     timer::set_next_trigger,
 };
@@ -93,6 +93,7 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::InstructionPageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
+            current_add_signal(SignalFlags::SIGSEGV);
             if !handle_page_fault(stval) {
                 println_kernel!(
                     "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
@@ -179,7 +180,7 @@ pub fn handle_page_fault(fault_addr: usize) -> bool {
             // 延迟加载，访问时才分配物理页。且如果之前已经映射过，那么不会再次分配物理页，共享之前的物理页。
             let (ppn, range, shared) = mapping.map(fault_va).unwrap();
             // 更新页表
-            pcb.memory_set.map(fault_vpn, ppn, range.perm);
+            // pcb.memory_set.map(fault_vpn, ppn, range.perm);
             // 如果不是共享的（分配了新的物理页），则从文件中读取数据
             // 这是mmap的功能，即映射文件内容到内存
             if !shared {

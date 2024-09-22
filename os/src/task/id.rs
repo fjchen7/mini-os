@@ -145,7 +145,7 @@ pub struct TaskUserRes {
     pub process: Weak<ProcessControlBlock>,
 }
 
-// 获取线程的存放trap上下文的虚拟地址
+// 获取线程的存放trap上下文的虚拟地址。位于内存高位。
 fn trap_cx_bottom_from_tid(tid: usize) -> usize {
     TRAP_CONTEXT - tid * PAGE_SIZE
 }
