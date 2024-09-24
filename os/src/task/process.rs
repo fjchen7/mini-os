@@ -14,7 +14,7 @@ use crate::{
     mm::{
         kernel_token, translated_refmut, FileMapping, MemorySet, VirtAddr, VirtualAddressAllocator,
     },
-    sync::UPSafeCell,
+    sync::{Mutex, UPSafeCell},
     trap::{trap_handler, TrapContext},
 };
 use alloc::{
@@ -66,6 +66,9 @@ pub struct ProcessControlBlockInner {
     pub killed: bool,
     // 进程是否被挂起（收到SIGSTOP后的状态，并由SIGCONT恢复）
     pub frozen: bool,
+
+    // 该进程所拥有的互斥锁列表
+    pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
 
     // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
     pub heap_bottom: usize,
@@ -161,6 +164,7 @@ impl ProcessControlBlock {
                     trap_ctx_backup: None,
                     killed: false,
                     frozen: false,
+                    mutex_list: vec![],
                     heap_bottom: ustack_base,
                     program_brk: ustack_base,
                     mmap_va_allocator: VirtualAddressAllocator::default(),
@@ -229,6 +233,7 @@ impl ProcessControlBlock {
                     trap_ctx_backup: None,
                     killed: false,
                     frozen: false,
+                    mutex_list: vec![],
                     heap_bottom: parent.heap_bottom,
                     program_brk: parent.program_brk,
                     mmap_va_allocator: VirtualAddressAllocator::default(),
