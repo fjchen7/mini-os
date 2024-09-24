@@ -8,6 +8,7 @@ const SYSCALL_PIPE: usize = 59;
 const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_EXIT: usize = 93;
+const SYSCALL_SLEEP: usize = 101;
 const SYSCALL_YIELD: usize = 124;
 const SYSCALL_KILL: usize = 129;
 const SYSCALL_SIGACTION: usize = 134;
@@ -70,6 +71,13 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
 pub fn sys_exit(exit_code: i32) -> ! {
     syscall(SYSCALL_EXIT, [exit_code as usize, 0, 0]);
     unreachable!("sys_exit never returns!")
+}
+
+// 使当前线程睡眠一段时间。
+// - sleep_ms：睡眠的时间，单位为毫秒。
+// - 返回值： 0
+pub fn sys_sleep(sleep_ms: usize) -> isize {
+    syscall(SYSCALL_SLEEP, [sleep_ms, 0, 0])
 }
 
 // 程序主动让出CPU，调度到其他程序

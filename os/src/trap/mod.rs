@@ -9,7 +9,7 @@ use crate::{
         current_trap_cx, current_trap_cx_user_va, current_user_token, exit_current_and_run_next,
         handle_signals, suspend_current_and_run_next, SignalFlags,
     },
-    timer::set_next_trigger,
+    timer::{check_timer, set_next_trigger},
 };
 use alloc::sync::Arc;
 use core::{
@@ -84,6 +84,8 @@ pub fn trap_handler() -> ! {
         // 时钟中断
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
+            // 检查定时器，看是否有阻塞的任务可以唤醒。
+            check_timer();
             suspend_current_and_run_next();
         }
         // 访存异常

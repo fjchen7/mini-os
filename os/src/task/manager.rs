@@ -1,6 +1,7 @@
 //!Implementation of [`TaskManager`]
 use super::process::ProcessControlBlock;
 use super::task::TaskControlBlock;
+use super::TaskStatus;
 use crate::sync::UPSafeCell;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::VecDeque;
@@ -64,6 +65,14 @@ pub fn remove_task(task: Arc<TaskControlBlock>) {
 // 从就绪队列中选出一个任务，分配CPU资源
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.exclusive_access().fetch()
+}
+
+// 唤醒被阻塞的任务
+pub fn wakeup_task(task: Arc<TaskControlBlock>) {
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_status = TaskStatus::Ready;
+    drop(task_inner);
+    add_task(task);
 }
 
 // 根据PID找到进程控制块

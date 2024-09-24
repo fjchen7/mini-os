@@ -17,6 +17,7 @@ mod task;
 use crate::fs::open_file;
 use crate::fs::OpenFlags;
 use crate::sbi::shutdown;
+use crate::timer::remove_timer;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use id::TaskUserRes;
@@ -28,8 +29,7 @@ use process::ProcessControlBlock;
 
 pub use action::SignalAction;
 pub use id::pid_alloc;
-pub use manager::add_task;
-pub use manager::pid2process;
+pub use manager::{add_task, pid2process, wakeup_task};
 pub use processor::{
     current_kstack_top, current_process, current_task, current_task_pid, current_trap_cx,
     current_trap_cx_user_va, current_user_token, run_tasks, schedule, take_current_task,
@@ -49,19 +49,19 @@ pub fn suspend_current_and_run_next() {
     // 修改当前任务的状态
     task_inner.task_status = TaskStatus::Ready;
     drop(task_inner);
-
     // 将任务重新加入到任务管理器中
     add_task(task);
     // 进入调度逻辑
     schedule(task_cx_ptr);
 }
 
-// 阻塞当前线程，并运行下一个线程
+// 阻塞当前任务，并运行下一个任务
+// 被阻塞的任务，不会再被调度，直到被唤醒
 pub fn block_current_and_run_next() {
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
-    task_inner.task_status = TaskStatus::Blocked;
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    task_inner.task_status = TaskStatus::Blocked;
     drop(task_inner);
     schedule(task_cx_ptr);
 }
@@ -156,6 +156,7 @@ pub fn add_initproc() {
 
 pub fn remove_inactive_task(task: Arc<TaskControlBlock>) {
     remove_task(Arc::clone(&task));
+    remove_timer(Arc::clone(&task));
 }
 
 pub fn check_signals_error_of_current() -> Option<(i32, &'static str)> {

@@ -112,11 +112,8 @@ pub fn get_time() -> isize {
     sys_get_time()
 }
 
-pub fn sleep(period_ms: usize) {
-    let start = sys_get_time();
-    while sys_get_time() < start + period_ms as isize {
-        sys_yield();
-    }
+pub fn sleep(sleep_ms: usize) {
+    sys_sleep(sleep_ms);
 }
 
 pub fn sbrk(size: i32) -> isize {
