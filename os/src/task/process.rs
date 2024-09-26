@@ -14,7 +14,7 @@ use crate::{
     mm::{
         kernel_token, translated_refmut, FileMapping, MemorySet, VirtAddr, VirtualAddressAllocator,
     },
-    sync::{Mutex, UPSafeCell},
+    sync::{Mutex, Semaphore, UPSafeCell},
     trap::{trap_handler, TrapContext},
 };
 use alloc::{
@@ -69,6 +69,8 @@ pub struct ProcessControlBlockInner {
 
     // 该进程所拥有的互斥锁列表
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
+    // 该进程所拥有的信号量列表
+    pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
 
     // 堆的底部，即堆的起始地址。数字小（堆从低地址向高地址增长）。
     pub heap_bottom: usize,
@@ -165,6 +167,7 @@ impl ProcessControlBlock {
                     killed: false,
                     frozen: false,
                     mutex_list: vec![],
+                    semaphore_list: vec![],
                     heap_bottom: ustack_base,
                     program_brk: ustack_base,
                     mmap_va_allocator: VirtualAddressAllocator::default(),
@@ -234,6 +237,7 @@ impl ProcessControlBlock {
                     killed: false,
                     frozen: false,
                     mutex_list: vec![],
+                    semaphore_list: vec![],
                     heap_bottom: parent.heap_bottom,
                     program_brk: parent.program_brk,
                     mmap_va_allocator: VirtualAddressAllocator::default(),
