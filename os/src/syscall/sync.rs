@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use crate::{
-    sync::{Mutex, MutexBlocking, MutexSpin, Semaphore},
+    sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore},
     task::{block_current_and_run_next, current_process, current_task},
     timer::{add_timer, get_time_ms},
 };
@@ -114,5 +114,56 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.down();
+    0
+}
+
+// 为当前进程新增一个条件变量。
+// - 返回值：假定该操作必定成功，返回创建的条件变量的 ID。
+pub fn sys_condvar_create() -> isize {
+    let condvar = Some(Arc::new(Condvar::new()));
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    if let Some(id) = process_inner
+        .condvar_list
+        .iter()
+        .enumerate()
+        .find(|(_, item)| item.is_none())
+        .map(|(id, _)| id)
+    {
+        process_inner.condvar_list[id] = condvar;
+        id as isize
+    } else {
+        process_inner.condvar_list.push(condvar);
+        process_inner.condvar_list.len() as isize - 1
+    }
+}
+
+// 对当前进程的指定条件变量进行 signal 操作，即唤醒在该条件变量上阻塞的线程（如果存在）。
+// - condvar_id：要操作的条件变量的 ID 。
+// - 返回值：假定该操作必定成功，返回 0 。
+pub fn sys_condvar_signal(condvar_id: usize) -> isize {
+    let process = current_process();
+    let process_inner = process.inner_exclusive_access();
+    let condvar = Arc::clone(process_inner.condvar_list[condvar_id].as_ref().unwrap());
+    drop(process_inner);
+    condvar.signal();
+    0
+}
+
+// 对当前进程的指定条件变量进行 wait 操作，阶段分为：
+// 1. 释放当前线程持有的一把互斥锁；
+// 2. 阻塞当前线程，并将其加入指定条件变量的阻塞队列；
+// 3. 等待其他线程用 signal 操作唤醒当前线程；
+// 4. 重新获取之前持有的锁。
+// - condvar_id：要操作的条件变量的 ID 。
+// - mutex_id：当前线程持有的互斥锁的 ID 。
+// - 返回值：假定该操作必定成功，返回 0 。
+pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
+    let process = current_process();
+    let process_inner = process.inner_exclusive_access();
+    let condvar = Arc::clone(process_inner.condvar_list[condvar_id].as_ref().unwrap());
+    let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    drop(process_inner);
+    condvar.wait(mutex);
     0
 }

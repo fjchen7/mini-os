@@ -27,6 +27,9 @@ const SYSCALL_MUTEX_UNLOCK: usize = 1012;
 const SYSCALL_SEMAPHORE_CREATE: usize = 1020;
 const SYSCALL_SEMAPHORE_UP: usize = 1021;
 const SYSCALL_SEMAPHORE_DOWN: usize = 1022;
+const SYSCALL_CONDVAR_CREATE: usize = 1030;
+const SYSCALL_CONDVAR_SIGNAL: usize = 1031;
+const SYSCALL_CONDVAR_WAIT: usize = 1032;
 
 mod fs;
 mod process;
@@ -78,6 +81,9 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_SEMAPHORE_CREATE => sys_semaphore_create(args[0] as usize),
         SYSCALL_SEMAPHORE_UP => sys_semaphore_up(args[0]),
         SYSCALL_SEMAPHORE_DOWN => sys_semaphore_down(args[0]),
+        SYSCALL_CONDVAR_CREATE => sys_condvar_create(),
+        SYSCALL_CONDVAR_SIGNAL => sys_condvar_signal(args[0]),
+        SYSCALL_CONDVAR_WAIT => sys_condvar_wait(args[0], args[1]),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }
