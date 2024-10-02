@@ -95,7 +95,6 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::InstructionPageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            current_add_signal(SignalFlags::SIGSEGV);
             if !handle_page_fault(stval) {
                 println_kernel!(
                     "PageFault {:?} in PID {}, bad addr = {:#x}, bad instruction = {:#x}, killed by kernel.",
