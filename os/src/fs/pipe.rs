@@ -1,5 +1,5 @@
 use super::File;
-use crate::{mm::UserBuffer, sync::UPSafeCell, task::suspend_current_and_run_next};
+use crate::{mm::UserBuffer, sync::UPIntrFreeCell, task::suspend_current_and_run_next};
 use alloc::sync::{Arc, Weak};
 
 const RING_BUFFER_SIZE: usize = 32;
@@ -9,7 +9,7 @@ pub struct Pipe {
     readable: bool,
     writable: bool,
     // 不同的管道可能共用同一个环形缓冲区，所以要用Arc
-    buffer: Arc<UPSafeCell<PipeRingBuffer>>,
+    buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -30,14 +30,14 @@ pub struct PipeRingBuffer {
 }
 
 impl Pipe {
-    pub fn read_end_with_buffer(buffer: Arc<UPSafeCell<PipeRingBuffer>>) -> Self {
+    pub fn read_end_with_buffer(buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>) -> Self {
         Self {
             readable: true,
             writable: false,
             buffer,
         }
     }
-    pub fn write_end_with_buffer(buffer: Arc<UPSafeCell<PipeRingBuffer>>) -> Self {
+    pub fn write_end_with_buffer(buffer: Arc<UPIntrFreeCell<PipeRingBuffer>>) -> Self {
         Self {
             readable: false,
             writable: true,
@@ -191,7 +191,7 @@ impl PipeRingBuffer {
 
 // 创建新的管道，返回它的读端和写端
 pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
-    let buffer = Arc::new(unsafe { UPSafeCell::new(PipeRingBuffer::new()) });
+    let buffer = Arc::new(unsafe { UPIntrFreeCell::new(PipeRingBuffer::new()) });
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
     let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone()));
     buffer.exclusive_access().set_write_end(&write_end);

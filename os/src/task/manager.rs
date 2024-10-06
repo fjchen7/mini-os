@@ -2,7 +2,7 @@
 use super::process::ProcessControlBlock;
 use super::task::TaskControlBlock;
 use super::TaskStatus;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
@@ -45,11 +45,11 @@ impl TaskManager {
 
 lazy_static! {
     // 用于管理任务的全局变量
-    pub static ref TASK_MANAGER: UPSafeCell<TaskManager> =
-        unsafe { UPSafeCell::new(TaskManager::new()) };
+    pub static ref TASK_MANAGER: UPIntrFreeCell<TaskManager> =
+        unsafe { UPIntrFreeCell::new(TaskManager::new()) };
     // PID->PCB结构体的映射
-    pub static ref PID2PCB: UPSafeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
-        unsafe { UPSafeCell::new(BTreeMap::new()) };
+    pub static ref PID2PCB: UPIntrFreeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
+        unsafe { UPIntrFreeCell::new(BTreeMap::new()) };
 }
 
 // 将任务加入就绪队列

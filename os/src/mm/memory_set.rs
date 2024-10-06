@@ -8,7 +8,7 @@ use super::{
 use crate::{
     config::{MEMORY_END, MMIO, PAGE_SIZE, TRAMPOLINE},
     mm::address::StepByOne,
-    sync::UPSafeCell,
+    sync::UPIntrFreeCell,
 };
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec, vec::Vec};
 use core::{arch::asm, cmp::min};
@@ -17,8 +17,8 @@ use riscv::register::satp;
 
 lazy_static! {
     // 用于管理内核地址空间的MemorySet实例
-    pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
-        Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+    pub static ref KERNEL_SPACE: Arc<UPIntrFreeCell<MemorySet>> =
+        Arc::new(unsafe { UPIntrFreeCell::new(MemorySet::new_kernel()) });
 }
 
 // 获取内核地址空间的根页表的token

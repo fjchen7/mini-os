@@ -1,15 +1,8 @@
-//! `Arc<Inode>` -> `OSInodeInner`: In order to open files concurrently
-//! we need to wrap `Inode` into `Arc`,but `Mutex` in `Inode` prevents
-//! file systems from being accessed simultaneously
-//!
-//! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
-//! need to wrap `OSInodeInner` into `UPSafeCell`
-
 //! 将文件系统的inode包装成内核的inode，即OSInode。该类型供进程使用，表示一个被打开的文件。
 
 use super::File;
 use crate::mm::UserBuffer;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use crate::{drivers::BLOCK_DEVICE, mm::MapPermission};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -21,7 +14,7 @@ use lazy_static::*;
 pub struct OSInode {
     readable: bool,
     writable: bool,
-    inner: UPSafeCell<OSInodeInner>,
+    inner: UPIntrFreeCell<OSInodeInner>,
 }
 
 pub struct OSInodeInner {
@@ -35,7 +28,7 @@ impl OSInode {
         Self {
             readable,
             writable,
-            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
+            inner: unsafe { UPIntrFreeCell::new(OSInodeInner { offset: 0, inode }) },
         }
     }
 

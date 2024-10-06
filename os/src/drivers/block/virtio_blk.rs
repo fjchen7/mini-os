@@ -5,7 +5,7 @@ use crate::mm::{
     frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr,
 };
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use alloc::vec::Vec;
 use lazy_static::*;
 use virtio_drivers::{Hal, VirtIOBlk, VirtIOHeader};
@@ -13,11 +13,11 @@ use virtio_drivers::{Hal, VirtIOBlk, VirtIOHeader};
 #[allow(unused)]
 const VIRTIO0: usize = 0x10001000;
 
-pub struct VirtIOBlock(UPSafeCell<VirtIOBlk<'static, VirtioHal>>);
+pub struct VirtIOBlock(UPIntrFreeCell<VirtIOBlk<'static, VirtioHal>>);
 
 lazy_static! {
     // VirtIO架构下，需要在内存区域放置环形队列，供CPU读取或写入操作IO的请求
-    static ref QUEUE_FRAMES: UPSafeCell<Vec<FrameTracker>> = unsafe { UPSafeCell::new(Vec::new()) };
+    static ref QUEUE_FRAMES: UPIntrFreeCell<Vec<FrameTracker>> = unsafe { UPIntrFreeCell::new(Vec::new()) };
 }
 
 impl BlockDevice for VirtIOBlock {
@@ -39,7 +39,7 @@ impl VirtIOBlock {
     #[allow(unused)]
     pub fn new() -> Self {
         unsafe {
-            Self(UPSafeCell::new(
+            Self(UPIntrFreeCell::new(
                 // 这里传入的&mut VirtIOHeader，表示以MMIO方式访问VirtIO设备所需的一组寄存器
                 VirtIOBlk::<VirtioHal>::new(&mut *(VIRTIO0 as *mut VirtIOHeader)).unwrap(),
             ))

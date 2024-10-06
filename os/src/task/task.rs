@@ -1,11 +1,13 @@
-use core::cell::RefMut;
-
 use super::{
     id::{kstack_alloc, KernelStack, TaskUserRes},
     process::ProcessControlBlock,
     TaskContext,
 };
-use crate::{mm::PhysPageNum, sync::UPSafeCell, trap::TrapContext};
+use crate::{
+    mm::PhysPageNum,
+    sync::{UPIntrFreeCell, UPIntrRefMut},
+    trap::TrapContext,
+};
 use alloc::sync::{Arc, Weak};
 
 // 线程控制块
@@ -13,7 +15,7 @@ pub struct TaskControlBlock {
     pub process: Weak<ProcessControlBlock>,
     pub kstack: KernelStack,
     // 存放运行时可变的元数据
-    inner: UPSafeCell<TaskControlBlockInner>,
+    inner: UPIntrFreeCell<TaskControlBlockInner>,
 }
 
 pub struct TaskControlBlockInner {
@@ -65,7 +67,7 @@ impl TaskControlBlock {
             process: Arc::downgrade(&process),
             kstack,
             inner: unsafe {
-                UPSafeCell::new(TaskControlBlockInner {
+                UPIntrFreeCell::new(TaskControlBlockInner {
                     res: Some(res),
                     trap_cx_ppn,
                     task_cx: TaskContext::goto_trap_return(kstack_top),
@@ -76,7 +78,7 @@ impl TaskControlBlock {
         }
     }
 
-    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
+    pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, TaskControlBlockInner> {
         self.inner.exclusive_access()
     }
 

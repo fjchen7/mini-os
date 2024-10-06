@@ -1,11 +1,10 @@
-//!Implementation of [`Processor`] and Intersection of control flow
 use super::manager::fetch_task;
 use super::process::ProcessControlBlock;
 use super::switch::__switch;
 use super::task::TaskControlBlock;
 use super::TaskContext;
 use super::TaskStatus;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -44,7 +43,7 @@ impl Processor {
 }
 
 lazy_static! {
-    pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe { UPSafeCell::new(Processor::new()) };
+    pub static ref PROCESSOR: UPIntrFreeCell<Processor> = unsafe { UPIntrFreeCell::new(Processor::new()) };
 }
 
 // 从idle控制流切换到任务控制流。idle控制流是两个任务之间的中间状态，用于解耦任务切出和切入。

@@ -1,6 +1,6 @@
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
 use crate::mm::{MapPermission, PhysPageNum, VirtAddr, KERNEL_SPACE};
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
@@ -21,11 +21,11 @@ pub struct RecycleAllocator {
 
 lazy_static! {
     // PID分配器
-    static ref PID_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+    static ref PID_ALLOCATOR: UPIntrFreeCell<RecycleAllocator> =
+        unsafe { UPIntrFreeCell::new(RecycleAllocator::new()) };
     // 线程的内核栈分配器
-    static ref KSTACK_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
+    static ref KSTACK_ALLOCATOR: UPIntrFreeCell<RecycleAllocator> =
+        unsafe { UPIntrFreeCell::new(RecycleAllocator::new()) };
 
 }
 
