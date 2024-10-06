@@ -1,5 +1,8 @@
 use crate::sync::{Mutex, UPIntrFreeCell};
-use crate::task::{block_current_and_run_next, current_task, wakeup_task, TaskControlBlock};
+use crate::task::{
+    block_current_and_run_next, block_current_task, current_task, wakeup_task, TaskContext,
+    TaskControlBlock,
+};
 use alloc::{collections::VecDeque, sync::Arc};
 
 pub struct Condvar {
@@ -38,5 +41,12 @@ impl Condvar {
         drop(inner);
         block_current_and_run_next();
         mutex.lock();
+    }
+
+    pub fn wait_no_scheduled(&self) -> *mut TaskContext {
+        self.inner.exclusive_session(|inner| {
+            inner.wait_queue.push_back(current_task().unwrap());
+        });
+        block_current_task()
     }
 }

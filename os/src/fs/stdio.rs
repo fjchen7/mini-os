@@ -1,11 +1,10 @@
-//!Stdin & Stdout
 use super::File;
+use crate::drivers::chardev::{CharDevice, UART};
 use crate::mm::UserBuffer;
-use crate::sbi::console_getchar;
-use crate::task::suspend_current_and_run_next;
-///Standard input
+
+// 标准输入
 pub struct Stdin;
-///Standard output
+// 标准输出
 pub struct Stdout;
 
 impl File for Stdin {
@@ -18,18 +17,7 @@ impl File for Stdin {
     fn read(&self, mut user_buf: UserBuffer) -> usize {
         assert_eq!(user_buf.len(), 1);
         // 每次只读取一个字符
-        let mut c: usize;
-        loop {
-            c = console_getchar();
-            if c == 0 {
-                // 如果没有字符可读，则挂起当前任务，切换到下一个任务
-                suspend_current_and_run_next();
-                continue;
-            } else {
-                break;
-            }
-        }
-        let ch = c as u8;
+        let ch = UART.read();
         unsafe {
             user_buf.buffers[0].as_mut_ptr().write_volatile(ch);
         }
