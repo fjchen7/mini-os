@@ -1,4 +1,4 @@
-use super::UPSafeCell;
+use super::UPIntrFreeCell;
 use crate::task::TaskControlBlock;
 use crate::task::{block_current_and_run_next, suspend_current_and_run_next};
 use crate::task::{current_task, wakeup_task};
@@ -12,13 +12,13 @@ pub trait Mutex: Sync + Send {
 // 自旋式的互斥锁
 // 在锁被占用时，将不断尝试获取锁。这将占用CPU时间。
 pub struct MutexSpin {
-    locked: UPSafeCell<bool>,
+    locked: UPIntrFreeCell<bool>,
 }
 
 impl MutexSpin {
     pub fn new() -> Self {
         Self {
-            locked: unsafe { UPSafeCell::new(false) },
+            locked: unsafe { UPIntrFreeCell::new(false) },
         }
     }
 }
@@ -50,7 +50,7 @@ impl Mutex for MutexSpin {
 // 在锁被占用时，会将该任务设置为阻塞状态，不再调度它。
 // 操作系统检查到锁可用后，将唤醒该任务，使其获得锁。
 pub struct MutexBlocking {
-    inner: UPSafeCell<MutexBlockingInner>,
+    inner: UPIntrFreeCell<MutexBlockingInner>,
 }
 
 pub struct MutexBlockingInner {
@@ -63,7 +63,7 @@ impl MutexBlocking {
     pub fn new() -> Self {
         Self {
             inner: unsafe {
-                UPSafeCell::new(MutexBlockingInner {
+                UPIntrFreeCell::new(MutexBlockingInner {
                     locked: false,
                     wait_queue: VecDeque::new(),
                 })

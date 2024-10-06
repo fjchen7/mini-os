@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 
 use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
-use crate::sync::UPSafeCell;
+use crate::sync::UPIntrFreeCell;
 use crate::task::{wakeup_task, TaskControlBlock};
 use alloc::collections::binary_heap::BinaryHeap;
 use alloc::sync::Arc;
@@ -72,8 +72,8 @@ impl Ord for TimerCondVar {
 
 lazy_static! {
     // 用二插堆（优先队列）实现排序，每次从堆顶取出最小的时间
-    static ref TIMERS: UPSafeCell<BinaryHeap<TimerCondVar>> =
-        unsafe { UPSafeCell::new(BinaryHeap::<TimerCondVar>::new()) };
+    static ref TIMERS: UPIntrFreeCell<BinaryHeap<TimerCondVar>> =
+        unsafe { UPIntrFreeCell::new(BinaryHeap::<TimerCondVar>::new()) };
 }
 
 pub fn add_timer(expire_ms: usize, task: Arc<TaskControlBlock>) {

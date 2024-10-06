@@ -1,6 +1,6 @@
 //! 管理页帧（frame），即物理页
 
-use crate::{config::MEMORY_END, mm::address::PhysAddr, sync::UPSafeCell};
+use crate::{config::MEMORY_END, mm::address::PhysAddr, sync::UPIntrFreeCell};
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
@@ -94,8 +94,8 @@ impl Drop for FrameTracker {
 
 lazy_static! {
     // 全局的物理页帧分配器。分配的页会映射在内核地址空间的系统内核栈上。
-    pub static ref FRAME_ALLOCATOR: UPSafeCell<StackFrameAllocator> =
-        unsafe { UPSafeCell::new(StackFrameAllocator::new()) };
+    pub static ref FRAME_ALLOCATOR: UPIntrFreeCell<StackFrameAllocator> =
+        unsafe { UPIntrFreeCell::new(StackFrameAllocator::new()) };
 }
 
 // 初始化全局物理页帧分配器

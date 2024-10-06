@@ -1,5 +1,3 @@
-use core::cell::RefMut;
-
 use super::{
     action::SignalActions,
     add_task,
@@ -14,7 +12,7 @@ use crate::{
     mm::{
         kernel_token, translated_refmut, FileMapping, MemorySet, VirtAddr, VirtualAddressAllocator,
     },
-    sync::{Condvar, Mutex, Semaphore, UPSafeCell},
+    sync::{Condvar, Mutex, Semaphore, UPIntrFreeCell, UPIntrRefMut},
     trap::{trap_handler, TrapContext},
 };
 use alloc::{
@@ -28,7 +26,7 @@ use easy_fs::Inode;
 // 进程的控制块。进程的执行状态、资源控制等元数据，都保存在该结构体中。
 pub struct ProcessControlBlock {
     pub pid: PidHandle,
-    inner: UPSafeCell<ProcessControlBlockInner>,
+    inner: UPIntrFreeCell<ProcessControlBlockInner>,
 }
 
 pub struct ProcessControlBlockInner {
@@ -127,7 +125,7 @@ impl ProcessControlBlockInner {
 }
 
 impl ProcessControlBlock {
-    pub fn inner_exclusive_access(&self) -> RefMut<'_, ProcessControlBlockInner> {
+    pub fn inner_exclusive_access(&self) -> UPIntrRefMut<'_, ProcessControlBlockInner> {
         self.inner.exclusive_access()
     }
 
@@ -152,7 +150,7 @@ impl ProcessControlBlock {
         let process = Self {
             pid: pid_handle,
             inner: unsafe {
-                UPSafeCell::new(ProcessControlBlockInner {
+                UPIntrFreeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
                     memory_set,
                     parent: None,
@@ -247,7 +245,7 @@ impl ProcessControlBlock {
                     mmap_va_allocator: VirtualAddressAllocator::default(),
                     file_mappings: vec![],
                 };
-                UPSafeCell::new(value)
+                UPIntrFreeCell::new(value)
             },
         });
         // 更新父进程的children
