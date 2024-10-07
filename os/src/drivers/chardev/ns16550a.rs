@@ -127,6 +127,7 @@ impl<const BASE_ADDR: usize> NS16550a<BASE_ADDR> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn read_buffer_is_empty(&self) -> bool {
         self.inner
             .exclusive_session(|inner| inner.read_buffer.is_empty())

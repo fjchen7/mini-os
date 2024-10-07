@@ -10,6 +10,7 @@
 
 #[macro_use]
 mod console;
+mod board;
 mod config;
 mod drivers;
 pub mod fs;
@@ -30,6 +31,8 @@ extern crate bitflags;
 
 // 加载汇编代码
 use core::arch::global_asm;
+
+use drivers::{CharDevice as _, DEV_NON_BLOCKING_ACCESS, GPU_DEVICE, UART};
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("link_app.S"));
 
@@ -42,13 +45,18 @@ global_asm!(include_str!("link_app.S"));
 pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
-    println_kernel!("Hello, world!");
     mm::init();
-    task::add_initproc();
+    UART.init();
+    println!("KERN: init gpu");
+    let _gpu = GPU_DEVICE.clone();
     trap::init();
     trap::enable_timer_interrupt();
+    task::add_initproc();
     timer::set_next_trigger();
+    board::device_init();
     fs::list_apps();
+    *DEV_NON_BLOCKING_ACCESS.exclusive_access() = true;
+    println_kernel!("Hello, world!");
     task::run_tasks();
     unreachable!("Never reach end of rust_main");
 }

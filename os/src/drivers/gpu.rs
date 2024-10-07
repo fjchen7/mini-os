@@ -5,10 +5,9 @@ use core::any::Any;
 use embedded_graphics::pixelcolor::Rgb888;
 use tinybmp::Bmp;
 use virtio_drivers::{VirtIOGpu, VirtIOHeader};
-// TODO: extract
-const VIRTIO7: usize = 0x10007000;
 
 pub trait GpuDevice: Send + Sync + Any {
+    #[allow(dead_code)]
     fn update_cursor(&self);
     fn get_framebuffer(&self) -> &mut [u8];
     fn flush(&self);
@@ -30,7 +29,8 @@ impl VirtIOGpuWrapper {
     pub fn new() -> Self {
         unsafe {
             let mut virtio =
-                VirtIOGpu::<VirtioHal>::new(&mut *(VIRTIO7 as *mut VirtIOHeader)).unwrap();
+                VirtIOGpu::<VirtioHal>::new(&mut *(crate::config::VIRTIO7 as *mut VirtIOHeader))
+                    .unwrap();
             // 初始化显存
             let fbuffer = virtio.setup_framebuffer().unwrap();
             let len = fbuffer.len();
