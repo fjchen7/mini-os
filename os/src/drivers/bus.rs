@@ -1,6 +1,3 @@
-//! 将virtio-drivers提供的VirtIO块设备抽象VirtIOBlk包装为我们需要的VirtIOBlock
-
-use super::BlockDevice;
 use crate::mm::{
     frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
     StepByOne, VirtAddr,
@@ -8,45 +5,15 @@ use crate::mm::{
 use crate::sync::UPIntrFreeCell;
 use alloc::vec::Vec;
 use lazy_static::*;
-use virtio_drivers::{Hal, VirtIOBlk, VirtIOHeader};
-
-#[allow(unused)]
-const VIRTIO0: usize = 0x10001000;
-
-pub struct VirtIOBlock(UPIntrFreeCell<VirtIOBlk<'static, VirtioHal>>);
+use virtio_drivers::Hal;
 
 lazy_static! {
     // VirtIO架构下，需要在内存区域放置环形队列，供CPU读取或写入操作IO的请求
-    static ref QUEUE_FRAMES: UPIntrFreeCell<Vec<FrameTracker>> = unsafe { UPIntrFreeCell::new(Vec::new()) };
+    static ref QUEUE_FRAMES: UPIntrFreeCell<Vec<FrameTracker>> =
+        unsafe { UPIntrFreeCell::new(Vec::new()) };
 }
 
-impl BlockDevice for VirtIOBlock {
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) {
-        self.0
-            .exclusive_access()
-            .read_block(block_id, buf)
-            .expect("Error when reading VirtIOBlk");
-    }
-    fn write_block(&self, block_id: usize, buf: &[u8]) {
-        self.0
-            .exclusive_access()
-            .write_block(block_id, buf)
-            .expect("Error when writing VirtIOBlk");
-    }
-}
-
-impl VirtIOBlock {
-    #[allow(unused)]
-    pub fn new() -> Self {
-        unsafe {
-            Self(UPIntrFreeCell::new(
-                // 这里传入的&mut VirtIOHeader，表示以MMIO方式访问VirtIO设备所需的一组寄存器
-                VirtIOBlk::<VirtioHal>::new(&mut *(VIRTIO0 as *mut VirtIOHeader)).unwrap(),
-            ))
-        }
-    }
-}
-
+// 提供DMA内存分配和虚实地址映射操作（Hal的实现）
 pub struct VirtioHal;
 
 impl Hal for VirtioHal {

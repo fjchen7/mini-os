@@ -9,4 +9,6 @@ pub trait BlockDevice: Send + Sync + Any {
     fn read_block(&self, block_id: usize, buf: &mut [u8]);
     // 将buf中的数据，写入编号为block_id的块中
     fn write_block(&self, block_id: usize, buf: &[u8]);
+    // 中断处理函数
+    fn handle_irq(&self);
 }
