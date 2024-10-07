@@ -29,7 +29,7 @@ pub fn init() {
     set_kernel_trap_entry();
 }
 
-fn set_kernel_trap_entry() {
+pub fn set_kernel_trap_entry() {
     unsafe {
         stvec::write(trap_from_kernel as usize, TrapMode::Direct);
     }
@@ -45,9 +45,26 @@ fn set_user_trap_entry() {
 }
 
 #[no_mangle]
-// 暂时不考虑在内核态触发Trap的情况。第9章会涉及。
-pub fn trap_from_kernel() -> ! {
-    panic!("a trap {:?} from kernel!", scause::read().cause())
+pub fn trap_from_kernel(_trap_cx: &TrapContext) {
+    let scause = scause::read();
+    let stval = stval::read();
+    match scause.cause() {
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            crate::board::irq_handler();
+        }
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_trigger();
+            check_timer();
+            // 内核中断不调度任务
+        }
+        _ => {
+            panic!(
+                "Unsupported trap from kernel: {:?}, stval = {:#x}!",
+                scause.cause(),
+                stval
+            );
+        }
+    }
 }
 
 // 初始化时钟中断
@@ -87,6 +104,10 @@ pub fn trap_handler() -> ! {
             // 检查定时器，看是否有阻塞的任务可以唤醒。
             check_timer();
             suspend_current_and_run_next();
+        }
+        // 外部中断
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            crate::board::irq_handler();
         }
         // 访存异常
         Trap::Exception(Exception::StoreFault)
