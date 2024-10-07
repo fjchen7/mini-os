@@ -22,11 +22,18 @@ pub const MEMORY_END: usize = 0x88_000_000;
 
 // CPU的时钟频率（Hz），即每秒CPU经过的时钟周期数。
 // 这也是计数器寄存器mtime每秒会增加的数字。
-pub const CLOCK_FREQ: usize = 12500000;
+pub const CLOCK_FREQ: usize = 12_500_000;
 
-// MMIO可将设备的寄存器映射到内存中，以便CPU就能通过读写内存来控制该设备。
+// MMIO可将设备的寄存器映射到内存中，这样CPU就能通过读写内存来控制该设备。
 pub const MMIO: &[(usize, usize)] = &[
-    // (0x0010_0000, 0x00_2000), // VIRT_TEST/RTC  in virt machine
-    // Qemu模拟器中，MMIO的地址从0x1000_0000开始，大小为4KB
-    (0x1000_1000, 0x00_1000), // Virtio Block in virt machine
+    // Qemu模拟器中，MMIO的地址从0x1000_0000开始
+    (0x0010_0000, 0x00_2000), // VIRT_TEST/RTC  in virt machine
+    (0x2_000_000, 0x10_000),
+    (0xc_000_000, 0x210_000), // VIRT_PLIC in virt machine
+    (0x10_000_000, 0x9_000),  // VIRT_UART0 with GPU  in virt machine
 ];
+
+// RISC-V规定的PLIC和串口的虚拟地址
+// https://github.com/qemu/qemu/blob/master/hw/riscv/virt.c#L79-L82
+pub const VIRT_PLIC: usize = 0xC00_0000;
+pub const VIRT_UART: usize = 0x1000_0000;
