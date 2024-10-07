@@ -58,6 +58,8 @@ pub enum MapType {
     // 使用物理页分配器来分配，相对随机
     // 用户程序的地址空间，使用该映射方式
     Framed,
+    // 线性映射，即虚拟页号等于物理页号加上一个偏移量
+    Linear(isize),
 }
 
 bitflags! {
@@ -82,7 +84,7 @@ impl MemorySet {
 
     // 为逻辑段分配物理页，并将其加入到该地址空间。
     // 如果它以Framed方式映射，还可以提供数据，用来初始化映射到的物理页。
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+    pub fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&self.page_table, data);
@@ -411,6 +413,11 @@ impl MapArea {
                 // 记录这个映射关系。该物理页号现在将由这个逻辑段管理。
                 self.data_frames.insert(vpn, frame);
             }
+            MapType::Linear(pn_offset) => {
+                // check for sv39
+                assert!(vpn.0 < (1usize << 27));
+                ppn = PhysPageNum((vpn.0 as isize + pn_offset) as usize);
+            }
         }
         // 更新页表
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
@@ -419,12 +426,9 @@ impl MapArea {
 
     // 回收虚拟页号映射的物理页，并在页表上取消该映射关系。
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        match self.map_type {
-            MapType::Identical => {}
-            MapType::Framed => {
-                // 该物理页号将被回收，可被重新分配
-                self.data_frames.remove(&vpn);
-            }
+        if self.map_type == MapType::Framed {
+            // 该物理页号将被回收，可被重新分配
+            self.data_frames.remove(&vpn);
         }
         page_table.unmap(vpn);
     }
