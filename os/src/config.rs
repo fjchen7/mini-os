@@ -1,5 +1,3 @@
-//! 一些配置
-
 // 用户栈和内核栈的大小（KB）
 pub const USER_STACK_SIZE: usize = 4096;
 pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
@@ -37,3 +35,10 @@ pub const MMIO: &[(usize, usize)] = &[
 // https://github.com/qemu/qemu/blob/master/hw/riscv/virt.c#L79-L82
 pub const VIRT_PLIC: usize = 0xC00_0000;
 pub const VIRT_UART: usize = 0x1000_0000;
+
+// VirtIO设备的MMIO地址
+pub const VIRTIO0: usize = 0x10_008_000; // virtio_blk
+// pub const VIRTIO5: usize = 0x10_005_000; // virtio_keyboard
+// pub const VIRTIO6: usize = 0x10_006_000; // virtio_mouse
+pub const VIRTIO7: usize = 0x10_007_000; // virtio_gpu
+// pub const VIRTIO8: usize = 0x10_004_000; // virtio_net

@@ -10,6 +10,12 @@ ifeq ($(MODE), release)
 	MODE_ARG := --release
 endif
 
+# 是否打开GUI
+GUI ?= off
+ifeq ($(GUI), off)
+	GUI_OPTION := -display none
+endif
+
 # qemu环境参数
 BOARD := qemu
 SBI ?= rustsbi
@@ -48,11 +54,13 @@ kernel:
 # -device virtio-blk-device：将硬盘x0作为VirtIO总线上的一个块设备，接入到虚拟机中。
 #                            virtio-mmio-bus.0表示VirtIO总线通过MMIO进行控制，且该块设备的编号为0。
 QEMU_ARGS := -machine virt \
-			-nographic \
 			-bios $(BOOTLOADER) \
+			-serial stdio \
+			$(GUI_OPTION) \
 			-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
 			-drive file=$(FS_IMG),if=none,format=raw,id=x0 \
-			-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+			-device virtio-blk-device,drive=x0 \
+			-device virtio-gpu-device \
 
 QEMU_NAME := qemu-system-riscv64
 # 检查Qemu版本

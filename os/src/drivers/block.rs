@@ -34,8 +34,6 @@ pub fn block_device_test() {
     println!("block device test passed!");
 }
 
-const VIRTIO0: usize = 0x10008000;
-
 struct VirtIOBlock {
     virtio_blk: UPIntrFreeCell<VirtIOBlk<'static, VirtioHal>>,
     // 在等待I/O操作完成前，会挂起进程。等待I/O操作完成时，通过该条件变量唤醒进程
@@ -48,7 +46,8 @@ impl VirtIOBlock {
         let virtio_blk = unsafe {
             UPIntrFreeCell::new(
                 // 以MMIO方式访问VirtIO块设备的寄存器，VirtIOHeader表示该组寄存器
-                VirtIOBlk::<VirtioHal>::new(&mut *(VIRTIO0 as *mut VirtIOHeader)).unwrap(),
+                VirtIOBlk::<VirtioHal>::new(&mut *(crate::config::VIRTIO0 as *mut VirtIOHeader))
+                    .unwrap(),
             )
         };
         let mut condvars = BTreeMap::new();
